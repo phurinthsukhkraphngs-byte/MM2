@@ -22,6 +22,7 @@ local AutoGetGunEnabled = false
 local SpeedEnabled = false
 local NoclipEnabled = false
 local FlyEnabled = false
+local ChromaEnabled = false
 local isFlinging = false 
 local UIVisible = true
 local Destroyed = false
@@ -48,7 +49,6 @@ local Locales = {
         RoleInnocent = "Innocent",
         TabESP = "ESP",
         TabCombat = "Combat",
-        TabTroll = "Troll",
         TabPlayer = "Player",
         TabTP = "Teleports",
         SecVisuals = "Visuals",
@@ -70,6 +70,14 @@ local Locales = {
         TogNoclip = "Noclip (Walk Through Walls)",
         TogFly = "Fly (Cross-Platform)",
         TogSpeed = "Speed Boost",
+        SecEmotes = "Emotes (R15)",
+        BtnDance = "Default Dance",
+        BtnFloss = "Floss Dance",
+        BtnTPose = "T-Pose",
+        SecSkins = "Local Skins (Client)",
+        BtnSkinKnife = "Venom Knife",
+        BtnSkinGun = "Gold Revolver",
+        TogChroma = "Chroma Glow Effect",
         SecLocations = "Locations",
         BtnTPLobby = "Teleport to Lobby",
         BtnTPMap = "Teleport to Map",
@@ -97,7 +105,6 @@ local Locales = {
         RoleInnocent = "คนธรรมดา (Innocent)",
         TabESP = "มองทะลุ",
         TabCombat = "ต่อสู้",
-        TabTroll = "ป่วน",
         TabPlayer = "ตัวละคร",
         TabTP = "วาร์ป",
         SecVisuals = "การมองเห็น (ESP)",
@@ -119,6 +126,14 @@ local Locales = {
         TogNoclip = "เดินทะลุกำแพง (Noclip)",
         TogFly = "บินอิสระบนฟ้า (Fly)",
         TogSpeed = "วิ่งเร็วพิเศษ (Speed)",
+        SecEmotes = "ท่าเต้น (R15)",
+        BtnDance = "เต้นท่าพื้นฐาน (Dance)",
+        BtnFloss = "เต้นส่ายแขน (Floss)",
+        BtnTPose = "ยืนกางแขน (T-Pose)",
+        SecSkins = "สกินอาวุธ (เห็นคนเดียว)",
+        BtnSkinKnife = "มีดดาบพิษ Venom",
+        BtnSkinGun = "ปืนทอง Gold Revolver",
+        TogChroma = "อาวุธสีรุ้งเรืองแสง (Chroma)",
         SecLocations = "สถานที่",
         BtnTPLobby = "วาร์ปกลับล็อบบี้",
         BtnTPMap = "วาร์ปเข้าด่านปัจจุบัน",
@@ -367,7 +382,6 @@ local function executeShoot(teleport)
 
     if teleport then
         local originCF = targetHead.CFrame * CFrame.new(0, 0, 4)
-        
         myRoot.CFrame = originCF
         myRoot.Velocity = Vector3.zero
         task.wait(0.05)
@@ -380,7 +394,6 @@ local function executeShoot(teleport)
         local originCF = CFrame.new(myRoot.Position, targetHead.Position)
         shootRemote:FireServer(originCF, targetHead.CFrame)
     end
-
     return "SUCCESS"
 end
 
@@ -421,7 +434,6 @@ local function executeKnifeThrowNearest()
     local originCF = CFrame.new(myRoot.Position, targetHead.Position)
 
     throwRemote:FireServer(originCF, targetHead.CFrame)
-    
     return "SUCCESS"
 end
 
@@ -458,7 +470,7 @@ local function killAllKnife()
 end
 
 --==================================================
--- ULTIMATE TROLL FUNCTIONS (SKID FLING BY KILASIK)
+-- ULTIMATE TROLL FUNCTIONS (SKID FLING)
 --==================================================
 local function SkidFling(TargetPlayer)
     local Character = LocalPlayer.Character
@@ -479,14 +491,13 @@ local function SkidFling(TargetPlayer)
     local oldPos = RootPart.CFrame
     local oldFPDH = workspace.FallenPartsDestroyHeight
 
-    -- ล็อกสถานะป้องกัน Noclip รบกวนการทำฟิสิกส์ชนกระแทก
     isFlinging = true
     for _, part in ipairs(Character:GetChildren()) do
         if part:IsA("BasePart") then part.CanCollide = true end
     end
 
     workspace.CurrentCamera.CameraSubject = THead or Handle or THumanoid
-    workspace.FallenPartsDestroyHeight = 0/0 -- ป้องกันร่วงแมพตาย
+    workspace.FallenPartsDestroyHeight = 0/0 
 
     local FPos = function(BasePart, Pos, Ang)
         RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
@@ -554,7 +565,6 @@ local function SkidFling(TargetPlayer)
     Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
     workspace.CurrentCamera.CameraSubject = Humanoid
 
-    -- วาร์ปกลับจุดเดิมอย่างปลอดภัย
     local timeout = tick() + 2
     repeat
         RootPart.CFrame = oldPos * CFrame.new(0, 0.5, 0)
@@ -614,7 +624,6 @@ end
 local function tpToMap()
     local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not root then return "NO CHAR" end
-    
     for _, obj in ipairs(workspace:GetChildren()) do
         if obj:IsA("Model") and obj.Name ~= "Lobby" then
             local spawns = obj:FindFirstChild("Spawns")
@@ -626,6 +635,42 @@ local function tpToMap()
                     return "SUCCESS"
                 end
             end
+        end
+    end
+    return "NOT FOUND"
+end
+
+--==================================================
+-- PLAYER ADDITIONS (EMOTES & SKINS)
+--==================================================
+local function playEmote(id)
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "rbxassetid://" .. tostring(id)
+        local track = hum:LoadAnimation(anim)
+        track:Play()
+        return "SUCCESS"
+    end
+    return "FAILED"
+end
+
+local function changeSkin(toolName, meshId, texId)
+    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild(toolName)
+    if not tool then tool = LocalPlayer.Backpack:FindFirstChild(toolName) end
+    if tool then
+        local handle = tool:FindFirstChild("Handle")
+        if handle then
+            local mesh = handle:FindFirstChildOfClass("SpecialMesh")
+            if not mesh then
+                mesh = Instance.new("SpecialMesh")
+                mesh.Parent = handle
+            end
+            mesh.MeshType = Enum.MeshType.FileMesh
+            mesh.MeshId = "rbxassetid://" .. meshId
+            mesh.TextureId = texId and ("rbxassetid://" .. texId) or ""
+            return "SUCCESS"
         end
     end
     return "NOT FOUND"
@@ -649,21 +694,18 @@ end
 -- IY FLY LOGIC (CROSS-PLATFORM SMOOTH FLYING)
 --==================================================
 local flySpeed = 50
-local flyControl = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
 local bg, bv
 
 local function startFly()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     local hrp = char.HumanoidRootPart
-    
     if not bg then
         bg = Instance.new("BodyGyro") bg.P = 9e4 bg.maxTorque = Vector3.new(9e9, 9e9, 9e9) bg.cframe = hrp.CFrame bg.Parent = hrp
     end
     if not bv then
         bv = Instance.new("BodyVelocity") bv.velocity = Vector3.new(0, 0, 0) bv.maxForce = Vector3.new(9e9, 9e9, 9e9) bv.Parent = hrp
     end
-    
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum then hum.PlatformStand = true end
 end
@@ -678,25 +720,6 @@ local function stopFly()
     if bv then bv:Destroy() bv = nil end
 end
 
-UserInputService.InputBegan:Connect(function(input, proc)
-    if proc or Destroyed then return end
-    if input.KeyCode == Enum.KeyCode.W then flyControl.F = -1
-    elseif input.KeyCode == Enum.KeyCode.S then flyControl.B = 1
-    elseif input.KeyCode == Enum.KeyCode.A then flyControl.L = -1
-    elseif input.KeyCode == Enum.KeyCode.D then flyControl.R = 1
-    elseif input.KeyCode == Enum.KeyCode.Space then flyControl.E = 1
-    elseif input.KeyCode == Enum.KeyCode.LeftControl then flyControl.Q = -1 end
-end)
-
-UserInputService.InputEnded:Connect(function(input, proc)
-    if input.KeyCode == Enum.KeyCode.W then flyControl.F = 0
-    elseif input.KeyCode == Enum.KeyCode.S then flyControl.B = 0
-    elseif input.KeyCode == Enum.KeyCode.A then flyControl.L = 0
-    elseif input.KeyCode == Enum.KeyCode.D then flyControl.R = 0
-    elseif input.KeyCode == Enum.KeyCode.Space then flyControl.E = 0
-    elseif input.KeyCode == Enum.KeyCode.LeftControl then flyControl.Q = 0 end
-end)
-
 --==================================================
 -- UI DESIGN (MODERN DARK THEME)
 --==================================================
@@ -705,7 +728,6 @@ ScreenGui.Name = "R1N_MM2_UI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = game.CoreGui
 
--- Floating Mobile Toggle Button (For Mobile Accessibility)
 local MobileToggle = Instance.new("TextButton")
 MobileToggle.Size = UDim2.new(0, 45, 0, 45)
 MobileToggle.Position = UDim2.new(0, 10, 0.5, -22)
@@ -803,8 +825,6 @@ MinBtn.TextColor3 = Color3.fromRGB(161, 161, 170)
 MinBtn.TextSize = 24
 MinBtn.Font = Enum.Font.GothamBold
 MinBtn.Parent = TopBar
-MinBtn.MouseEnter:Connect(function() TweenService:Create(MinBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play() end)
-MinBtn.MouseLeave:Connect(function() TweenService:Create(MinBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(161, 161, 170)}):Play() end)
 
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -995,6 +1015,18 @@ CreateAction(TabCombat, "BtnAimShoot", "ActShoot", function() return executeShoo
 CreateSection(TabCombat, "SecMurderer")
 CreateAction(TabCombat, "BtnAimThrow", "ActThrow", function() return executeKnifeThrowNearest() end)
 CreateAction(TabCombat, "BtnKillAll", "ActExec", function() return killAllKnife() end)
+CreateSection(TabCombat, "SecFling")
+CreateAction(TabCombat, "BtnFlingM", "ActFling", function() 
+    local res = flingPlayerRole("Murderer")
+    return (res == "FAILED" or res == "NOT FOUND") and res or "FLUNG"
+end)
+CreateAction(TabCombat, "BtnFlingS", "ActFling", function() 
+    local target = findRole("Sheriff")
+    if not target then target = findRole("Hero") end
+    if not target then return "NOT FOUND" end
+    local res = SkidFling(target)
+    return (res == "FAILED") and res or "FLUNG"
+end)
 CreateSection(TabCombat, "SecGunLogic")
 CreateAction(TabCombat, "BtnTPGun", "ActTeleport", function()
     local r = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -1014,25 +1046,21 @@ CreateAction(TabCombat, "BtnGetGun", "ActPickUp", function()
 end)
 CreateToggle(TabCombat, "TogAutoGun", function(val) AutoGetGunEnabled = val end)
 
-local TabTroll = CreateTab("TabTroll")
-CreateSection(TabTroll, "SecFling")
-CreateAction(TabTroll, "BtnFlingM", "ActFling", function() 
-    local res = flingPlayerRole("Murderer")
-    return (res == "FAILED" or res == "NOT FOUND") and res or "FLUNG"
-end)
-CreateAction(TabTroll, "BtnFlingS", "ActFling", function() 
-    local target = findRole("Sheriff")
-    if not target then target = findRole("Hero") end
-    if not target then return "NOT FOUND" end
-    local res = SkidFling(target)
-    return (res == "FAILED") and res or "FLUNG"
-end)
-
 local TabPlayer = CreateTab("TabPlayer")
 CreateSection(TabPlayer, "SecMovement")
 CreateToggle(TabPlayer, "TogNoclip", function(val) toggleNoclip(val) end)
 CreateToggle(TabPlayer, "TogFly", function(val) FlyEnabled = val if not FlyEnabled then stopFly() end end)
 CreateToggle(TabPlayer, "TogSpeed", function(val) SpeedEnabled = val end)
+-- เพิ่มระบบ Emotes
+CreateSection(TabPlayer, "SecEmotes")
+CreateAction(TabPlayer, "BtnDance", "ActExec", function() return playEmote("507771019") end)
+CreateAction(TabPlayer, "BtnFloss", "ActExec", function() return playEmote("591564736") end)
+CreateAction(TabPlayer, "BtnTPose", "ActExec", function() return playEmote("507773208") end)
+-- เพิ่มระบบ Local Skins
+CreateSection(TabPlayer, "SecSkins")
+CreateAction(TabPlayer, "BtnSkinKnife", "ActExec", function() return changeSkin("Knife", "121944778", "121944781") end)
+CreateAction(TabPlayer, "BtnSkinGun", "ActExec", function() return changeSkin("Gun", "435454659", "435454790") end)
+CreateToggle(TabPlayer, "TogChroma", function(val) ChromaEnabled = val end)
 
 local TabTeleport = CreateTab("TabTP")
 CreateSection(TabTeleport, "SecLocations")
@@ -1140,8 +1168,34 @@ LangBtn.MouseButton1Click:Connect(function()
 end)
 
 --==================================================
--- BACKGROUND LOOPS
+-- BACKGROUND LOOPS (Chroma, Roles, Movement)
 --==================================================
+
+-- Chroma Skin Logic
+task.spawn(function()
+    local hue = 0
+    while not Destroyed do
+        task.wait(0.1)
+        if ChromaEnabled then
+            hue = hue + 0.05
+            if hue > 1 then hue = 0 end
+            local c = Color3.fromHSV(hue, 1, 1)
+            local char = LocalPlayer.Character
+            if char then
+                for _, w in ipairs({"Knife", "Gun"}) do
+                    local t = char:FindFirstChild(w)
+                    if t and t:FindFirstChild("Handle") then
+                        t.Handle.Material = Enum.Material.Neon
+                        t.Handle.Color = c
+                        local m = t.Handle:FindFirstChildOfClass("SpecialMesh")
+                        if m then m.VertexColor = Vector3.new(c.R, c.G, c.B) end
+                    end
+                end
+            end
+        end
+    end
+end)
+
 task.spawn(function()
     while not Destroyed do
         task.wait(0.5)
@@ -1173,7 +1227,6 @@ RunService.RenderStepped:Connect(function()
         if not bg or not bv or bg.Parent ~= hrp or bv.Parent ~= hrp then startFly() end
         bg.cframe = cam.CFrame
         
-        -- อ่านค่าจาก ControlModule ตรงๆ เพื่อรองรับ Mobile Virtual Joystick
         local PlayerModule = require(LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
         local moveVector = PlayerModule:GetControls():GetMoveVector()
         
