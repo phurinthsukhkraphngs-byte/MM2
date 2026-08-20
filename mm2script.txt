@@ -15,7 +15,7 @@ pcall(function()
 end)
 
 --==================================================
--- SETTINGS & VARIABLES
+-- SETTINGS, VARIABLES & LOCALIZATION
 --==================================================
 local ESPEnabled = true
 local AutoGetGunEnabled = false
@@ -35,9 +35,7 @@ local COLORS = {
     GunDrop = Color3.fromRGB(255, 255, 30)
 }
 
---==================================================
--- LOCALIZATION (DEFAULT: ENGLISH)
---==================================================
+-- ระบบเปลี่ยนภาษา
 local CurrentLang = "EN"
 local Locales = {
     EN = {
@@ -50,6 +48,7 @@ local Locales = {
         RoleInnocent = "Innocent",
         TabESP = "ESP",
         TabCombat = "Combat",
+        TabTroll = "Troll",
         TabPlayer = "Player",
         TabTP = "Teleports",
         SecVisuals = "Visuals",
@@ -98,6 +97,7 @@ local Locales = {
         RoleInnocent = "คนธรรมดา (Innocent)",
         TabESP = "มองทะลุ",
         TabCombat = "ต่อสู้",
+        TabTroll = "ป่วน",
         TabPlayer = "ตัวละคร",
         TabTP = "วาร์ป",
         SecVisuals = "การมองเห็น (ESP)",
@@ -486,7 +486,7 @@ local function SkidFling(TargetPlayer)
     end
 
     workspace.CurrentCamera.CameraSubject = THead or Handle or THumanoid
-    workspace.FallenPartsDestroyHeight = 0/0 
+    workspace.FallenPartsDestroyHeight = 0/0 -- ป้องกันร่วงแมพตาย
 
     local FPos = function(BasePart, Pos, Ang)
         RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
@@ -574,6 +574,15 @@ local function SkidFling(TargetPlayer)
     return "SUCCESS"
 end
 
+local function flingPlayerRole(roleName)
+    local target = findRole(roleName)
+    if not target then return "NOT FOUND" end
+    return SkidFling(target)
+end
+
+--==================================================
+-- LOCATIONS & LOGICS
+--==================================================
 local function tryGetGun()
     local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not root then return end
@@ -582,7 +591,8 @@ local function tryGetGun()
         if firetouchinterest then
             firetouchinterest(root, gunDrop, 0) task.wait(0.05) firetouchinterest(root, gunDrop, 1)
         else
-            local oldCF = root.CFrame root.CFrame = gunDrop.CFrame task.wait(0.1) root.CFrame = oldCF
+            local oldCF = root.CFrame
+            root.CFrame = gunDrop.CFrame task.wait(0.1) root.CFrame = oldCF
         end
     end
 end
@@ -639,6 +649,7 @@ end
 -- IY FLY LOGIC (CROSS-PLATFORM SMOOTH FLYING)
 --==================================================
 local flySpeed = 50
+local flyControl = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
 local bg, bv
 
 local function startFly()
@@ -666,6 +677,25 @@ local function stopFly()
     if bg then bg:Destroy() bg = nil end
     if bv then bv:Destroy() bv = nil end
 end
+
+UserInputService.InputBegan:Connect(function(input, proc)
+    if proc or Destroyed then return end
+    if input.KeyCode == Enum.KeyCode.W then flyControl.F = -1
+    elseif input.KeyCode == Enum.KeyCode.S then flyControl.B = 1
+    elseif input.KeyCode == Enum.KeyCode.A then flyControl.L = -1
+    elseif input.KeyCode == Enum.KeyCode.D then flyControl.R = 1
+    elseif input.KeyCode == Enum.KeyCode.Space then flyControl.E = 1
+    elseif input.KeyCode == Enum.KeyCode.LeftControl then flyControl.Q = -1 end
+end)
+
+UserInputService.InputEnded:Connect(function(input, proc)
+    if input.KeyCode == Enum.KeyCode.W then flyControl.F = 0
+    elseif input.KeyCode == Enum.KeyCode.S then flyControl.B = 0
+    elseif input.KeyCode == Enum.KeyCode.A then flyControl.L = 0
+    elseif input.KeyCode == Enum.KeyCode.D then flyControl.R = 0
+    elseif input.KeyCode == Enum.KeyCode.Space then flyControl.E = 0
+    elseif input.KeyCode == Enum.KeyCode.LeftControl then flyControl.Q = 0 end
+end)
 
 --==================================================
 -- UI DESIGN (MODERN DARK THEME)
@@ -753,7 +783,6 @@ RoleBadgeText.Font = Enum.Font.GothamBold
 RoleBadgeText.TextSize = 11
 RoleBadgeText.Parent = RoleBadgeFrame
 
--- Language Button
 local LangBtn = Instance.new("TextButton")
 LangBtn.Size = UDim2.new(0, 35, 0, 25)
 LangBtn.Position = UDim2.new(1, -110, 0, 12)
@@ -774,6 +803,8 @@ MinBtn.TextColor3 = Color3.fromRGB(161, 161, 170)
 MinBtn.TextSize = 24
 MinBtn.Font = Enum.Font.GothamBold
 MinBtn.Parent = TopBar
+MinBtn.MouseEnter:Connect(function() TweenService:Create(MinBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play() end)
+MinBtn.MouseLeave:Connect(function() TweenService:Create(MinBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(161, 161, 170)}):Play() end)
 
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -811,11 +842,11 @@ local TabFrames, TabButtons = {}, {}
 
 local function CreateTab(key)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.fromOffset(80, 30)
+    btn.Size = UDim2.fromOffset(75, 30)
     btn.BackgroundColor3 = Color3.fromRGB(39, 39, 42)
     btn.TextColor3 = Color3.fromRGB(161, 161, 170)
     btn.Font = Enum.Font.GothamMedium
-    btn.TextSize = 13
+    btn.TextSize = 12
     btn.AutoButtonColor = false
     btn.Parent = TabsContainer
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 15)
@@ -1092,6 +1123,7 @@ Instance.new("UICorner", RefreshBtn).CornerRadius = UDim.new(0, 6)
 T(RefreshBtn, "BtnRefresh")
 RefreshBtn.MouseButton1Click:Connect(RefreshPlayerList)
 
+-- INIT
 TabButtons[1].BackgroundColor3 = Color3.fromRGB(63, 63, 70)
 TabButtons[1].TextColor3 = Color3.fromRGB(255, 255, 255)
 TabFrames[1].Visible = true
