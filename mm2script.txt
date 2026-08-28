@@ -1,5 +1,5 @@
 -- ==============================================================================
--- R1N HUB - MURDER MYSTERY 2 (ZERO-DRIFT MOBILE & INSTANT CLOSE EDITION)
+-- R1N HUB - MURDER MYSTERY 2 (TOP-ANCHOR ZERO-MOTION EDITION)
 -- Source: Footagesus/WindUI (https://github.com/Footagesus/WindUI)
 -- ==============================================================================
 
@@ -853,13 +853,27 @@ local RoleTag = Window:Tag({
 })
 
 --==================================================
--- ZERO-DRIFT GARAGE DOOR COLLAPSE ENGINE (MOBILE & PC)
+-- ZERO-MOTION TOPBAR COLLAPSE ENGINE (TOP-ANCHORED)
 --==================================================
 local isCollapsed = false
 local isToggling = false
 local savedExpandedHeight = 440
-local savedTopEdgeOffset = nil
-local savedTopEdgeScale = 0
+
+-- ตั้งค่า AnchorPoint.Y ให้อยู่ที่ขอบบน (0) ตั้งแต่เริ่ม เพื่อให้บาร์บนล็อคอยู่กับที่ 100%
+task.spawn(function()
+    task.wait(0.1)
+    local mainFrame = Window.UIElements and Window.UIElements.Main
+    if mainFrame and mainFrame.AnchorPoint.Y ~= 0 then
+        local currentH = mainFrame.Size.Y.Offset > 0 and mainFrame.Size.Y.Offset or 440
+        mainFrame.Position = UDim2.new(
+            mainFrame.Position.X.Scale,
+            mainFrame.Position.X.Offset,
+            mainFrame.Position.Y.Scale,
+            mainFrame.Position.Y.Offset - (currentH * mainFrame.AnchorPoint.Y)
+        )
+        mainFrame.AnchorPoint = Vector2.new(0.5, 0)
+    end
+end)
 
 local function toggleCollapse()
     local mainFrame = Window.UIElements and Window.UIElements.Main
@@ -876,37 +890,34 @@ local function toggleCollapse()
     if bg then bg.ClipsDescendants = true end
     if innerMain then innerMain.ClipsDescendants = true end
 
-    local anchorY = mainFrame.AnchorPoint.Y
-    local currentHeight = mainFrame.Size.Y.Offset
+    -- มั่นใจว่า AnchorPoint.Y เป็น 0 เสมอ
+    if mainFrame.AnchorPoint.Y ~= 0 then
+        local currentH = mainFrame.Size.Y.Offset > 0 and mainFrame.Size.Y.Offset or 440
+        mainFrame.Position = UDim2.new(
+            mainFrame.Position.X.Scale,
+            mainFrame.Position.X.Offset,
+            mainFrame.Position.Y.Scale,
+            mainFrame.Position.Y.Offset - (currentH * mainFrame.AnchorPoint.Y)
+        )
+        mainFrame.AnchorPoint = Vector2.new(0.5, 0)
+    end
+
     local widthScale = mainFrame.Size.X.Scale
     local widthOffset = mainFrame.Size.X.Offset
 
     if isCollapsed then
-        if currentHeight > TOPBAR_HEIGHT then
-            savedExpandedHeight = currentHeight
+        if mainFrame.Size.Y.Offset > TOPBAR_HEIGHT then
+            savedExpandedHeight = mainFrame.Size.Y.Offset
         end
-
-        -- ล็อกพิกัดขอบบนสุดของแถบ Topbar ณ ตำแหน่งปัจจุบันแบบเป๊ะ 100%
-        savedTopEdgeScale = mainFrame.Position.Y.Scale
-        savedTopEdgeOffset = mainFrame.Position.Y.Offset - (currentHeight * anchorY)
 
         if sidebar then sidebar.Visible = false end
         if mainBar then mainBar.Visible = false end
         mainFrame.Visible = true
         if innerMain then innerMain.Visible = true end
 
-        local targetPosY = savedTopEdgeOffset + (TOPBAR_HEIGHT * anchorY)
-        local targetPosition = UDim2.new(
-            mainFrame.Position.X.Scale,
-            mainFrame.Position.X.Offset,
-            savedTopEdgeScale,
-            targetPosY
-        )
-        local targetSize = UDim2.new(widthScale, widthOffset, 0, TOPBAR_HEIGHT)
-
+        -- ปรับเฉพาะความสูง (Size) โดยไม่แตะต้อง Position เลยแม้แต่น้อย บาร์บนจึงอยู่นิ่งสนิท 100%
         local tween = TweenService:Create(mainFrame, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-            Size = targetSize,
-            Position = targetPosition
+            Size = UDim2.new(widthScale, widthOffset, 0, TOPBAR_HEIGHT)
         })
         tween:Play()
         task.delay(0.25, function() isToggling = false end)
@@ -915,23 +926,10 @@ local function toggleCollapse()
         if innerMain then innerMain.Visible = true end
 
         local targetHeight = savedExpandedHeight or 440
-        
-        -- ใช้พิกัดขอบบนสุดที่ล็อกไว้ ทำให้บาร์บนอยู่นิ่งที่เดิม 100% ไม่เด้งขึ้นและไม่ตกลงมา
-        local topEdgeScale = savedTopEdgeScale or mainFrame.Position.Y.Scale
-        local topEdgeOffset = savedTopEdgeOffset or (mainFrame.Position.Y.Offset - (TOPBAR_HEIGHT * anchorY))
 
-        local targetPosY = topEdgeOffset + (targetHeight * anchorY)
-        local targetPosition = UDim2.new(
-            mainFrame.Position.X.Scale,
-            mainFrame.Position.X.Offset,
-            topEdgeScale,
-            targetPosY
-        )
-        local targetSize = UDim2.new(widthScale, widthOffset, 0, targetHeight)
-
+        -- ปรับเฉพาะความสูง (Size) คลี่ลงด้านล่าง โดยบาร์บนอยู่ที่เดิม 100% ไม่ขยับ
         local tween = TweenService:Create(mainFrame, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-            Size = targetSize,
-            Position = targetPosition
+            Size = UDim2.new(widthScale, widthOffset, 0, targetHeight)
         })
         tween:Play()
 
