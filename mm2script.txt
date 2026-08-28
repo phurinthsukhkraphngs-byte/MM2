@@ -1,5 +1,5 @@
 -- ==============================================================================
--- R1N HUB - MURDER MYSTERY 2 (UNIVERSAL PC & MOBILE COMPATIBLE EDITION)
+-- R1N HUB - MURDER MYSTERY 2 (ZERO-DRIFT MOBILE & INSTANT CLOSE EDITION)
 -- Source: Footagesus/WindUI (https://github.com/Footagesus/WindUI)
 -- ==============================================================================
 
@@ -823,7 +823,7 @@ local function stopFly()
 end
 
 --==================================================
--- CREATE WINDUI WINDOW
+-- CREATE WINDUI WINDOW (IGNORE ALERTS BY DEFAULT)
 --==================================================
 local DEFAULT_SIZE = UDim2.fromOffset(600, 440)
 local TOPBAR_HEIGHT = 44
@@ -836,11 +836,13 @@ local Window = WindUI:CreateWindow({
     Theme = "Dark",
     Size = DEFAULT_SIZE,
     ToggleKey = Enum.KeyCode.RightShift,
+    IgnoreAlerts = true, -- ข้ามการถาม Close Window? ปิดทันที
     Topbar = {
         Height = TOPBAR_HEIGHT,
         ButtonsType = "Default",
     },
 })
+Window.IgnoreAlerts = true
 
 -- LIVE ROLE TAG BADGE (ช่องมุมบนแสดงบทบาทเรียลไทม์ โทนสีสดใส)
 local RoleTag = Window:Tag({
@@ -851,11 +853,13 @@ local RoleTag = Window:Tag({
 })
 
 --==================================================
--- UNIVERSAL GARAGE DOOR COLLAPSE ENGINE (MOBILE & PC)
+-- ZERO-DRIFT GARAGE DOOR COLLAPSE ENGINE (MOBILE & PC)
 --==================================================
 local isCollapsed = false
 local isToggling = false
 local savedExpandedHeight = 440
+local savedTopEdgeOffset = nil
+local savedTopEdgeScale = 0
 
 local function toggleCollapse()
     local mainFrame = Window.UIElements and Window.UIElements.Main
@@ -881,18 +885,22 @@ local function toggleCollapse()
         if currentHeight > TOPBAR_HEIGHT then
             savedExpandedHeight = currentHeight
         end
+
+        -- ล็อกพิกัดขอบบนสุดของแถบ Topbar ณ ตำแหน่งปัจจุบันแบบเป๊ะ 100%
+        savedTopEdgeScale = mainFrame.Position.Y.Scale
+        savedTopEdgeOffset = mainFrame.Position.Y.Offset - (currentHeight * anchorY)
+
         if sidebar then sidebar.Visible = false end
         if mainBar then mainBar.Visible = false end
         mainFrame.Visible = true
         if innerMain then innerMain.Visible = true end
 
-        -- คำนวณ Delta Offset ให้แถบบาร์บนอยู่นิ่งที่เดิมเป๊ะ 100% ไม่เลื่อนทั้งบน Mobile & PC
-        local deltaY = (TOPBAR_HEIGHT - currentHeight) * anchorY
+        local targetPosY = savedTopEdgeOffset + (TOPBAR_HEIGHT * anchorY)
         local targetPosition = UDim2.new(
             mainFrame.Position.X.Scale,
             mainFrame.Position.X.Offset,
-            mainFrame.Position.Y.Scale,
-            mainFrame.Position.Y.Offset + deltaY
+            savedTopEdgeScale,
+            targetPosY
         )
         local targetSize = UDim2.new(widthScale, widthOffset, 0, TOPBAR_HEIGHT)
 
@@ -907,12 +915,17 @@ local function toggleCollapse()
         if innerMain then innerMain.Visible = true end
 
         local targetHeight = savedExpandedHeight or 440
-        local deltaY = (targetHeight - currentHeight) * anchorY
+        
+        -- ใช้พิกัดขอบบนสุดที่ล็อกไว้ ทำให้บาร์บนอยู่นิ่งที่เดิม 100% ไม่เด้งขึ้นและไม่ตกลงมา
+        local topEdgeScale = savedTopEdgeScale or mainFrame.Position.Y.Scale
+        local topEdgeOffset = savedTopEdgeOffset or (mainFrame.Position.Y.Offset - (TOPBAR_HEIGHT * anchorY))
+
+        local targetPosY = topEdgeOffset + (targetHeight * anchorY)
         local targetPosition = UDim2.new(
             mainFrame.Position.X.Scale,
             mainFrame.Position.X.Offset,
-            mainFrame.Position.Y.Scale,
-            mainFrame.Position.Y.Offset + deltaY
+            topEdgeScale,
+            targetPosY
         )
         local targetSize = UDim2.new(widthScale, widthOffset, 0, targetHeight)
 
@@ -968,7 +981,18 @@ Window.Close = function(self)
     return CloseObj
 end
 
--- Hook ปุ่ม Topbar (— สำหรับย่อ Garage Door, ✕ สำหรับปิดซ่อน UI)
+-- Override Window.Destroy สำหรับปุ่ม X ปิดหน้าต่างทันที (ไม่ถามยืนยัน)
+Window.Destroy = function(self)
+    if Window.UIElements and Window.UIElements.Main then
+        Window.UIElements.Main.Visible = false
+        if MiniRestoreBar then
+            MiniRestoreBar.Text = "💨 R1N Hub (Open)"
+            MRBStroke.Color = Color3.fromRGB(255, 140, 0)
+        end
+    end
+end
+
+-- Hook ปุ่ม Topbar (— สำหรับย่อ Garage Door, ✕ สำหรับปิดซ่อน UI ทันที)
 pcall(function()
     local topbarRight = Window.UIElements.Main.Main.Topbar.Right
     for _, child in ipairs(topbarRight:GetChildren()) do
