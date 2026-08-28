@@ -1,5 +1,5 @@
 -- ==============================================================================
--- R1N HUB - MURDER MYSTERY 2 (TOP-ANCHOR ZERO-MOTION EDITION)
+-- R1N HUB - MURDER MYSTERY 2 (INSTANT 0MS AUTO-GUN ENGINE)
 -- Source: Footagesus/WindUI (https://github.com/Footagesus/WindUI)
 -- ==============================================================================
 
@@ -222,6 +222,59 @@ end
 
 Players.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(function() task.wait(0.5) if ESPEnabled then updateESP(p) end end) end)
 Players.PlayerRemoving:Connect(removeESP)
+
+--==================================================
+-- INSTANT 0MS AUTO GUN ENGINE (FASTEST PICKUP)
+--==================================================
+local function instantGrabGun(gunDropPart, notify)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local gd = gunDropPart or workspace:FindFirstChild("GunDrop", true)
+    if gd and gd:IsA("BasePart") then
+        if firetouchinterest then
+            firetouchinterest(root, gd, 0)
+            firetouchinterest(root, gd, 1)
+        else
+            local oldCF = root.CFrame
+            root.CFrame = gd.CFrame
+            task.wait(0.03)
+            root.CFrame = oldCF
+        end
+        if notify then
+            WindUI:Notify({ Title = "Gun", Content = "Picked up dropped Gun!", Icon = "check" })
+        end
+    else
+        if notify then
+            WindUI:Notify({ Title = "Gun", Content = "No gun dropped on map!", Icon = "alert-circle" })
+        end
+    end
+end
+
+-- Event-driven detection: ตรวจจับปืนทันทีใน 0ms แรกที่ปืนตกพื้น
+workspace.DescendantAdded:Connect(function(child)
+    if AutoGetGunEnabled and not Destroyed then
+        if child.Name == "GunDrop" and child:IsA("BasePart") then
+            instantGrabGun(child, false)
+        end
+    end
+end)
+
+-- Heartbeat ultra-fast loop: ตรวจสอบและเก็บปืนทุกเฟรมแบบไม่มีดีเลย์
+RunService.Heartbeat:Connect(function()
+    if AutoGetGunEnabled and not Destroyed then
+        local gd = workspace:FindFirstChild("GunDrop", true)
+        if gd and gd:IsA("BasePart") then
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if root and firetouchinterest then
+                firetouchinterest(root, gd, 0)
+                firetouchinterest(root, gd, 1)
+            end
+        end
+    end
+end)
 
 --==================================================
 -- COMBAT / CORE FUNCTIONS
@@ -629,7 +682,7 @@ local function toggleAntiFling(val)
 end
 
 --==================================================
--- LOCATIONS & LOGICS (SILENT LOOP FOR AUTO GUN)
+-- LOCATIONS & LOGICS
 --==================================================
 local function getLobby()
     for _, obj in ipairs(workspace:GetChildren()) do
@@ -652,27 +705,6 @@ local function getMap()
         end
     end
     return nil
-end
-
-local function tryGetGun(silent)
-    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local gunDrop = workspace:FindFirstChild("GunDrop", true)
-    if gunDrop and gunDrop:IsA("BasePart") then
-        if firetouchinterest then
-            firetouchinterest(root, gunDrop, 0) task.wait(0.05) firetouchinterest(root, gunDrop, 1)
-        else
-            local oldCF = root.CFrame
-            root.CFrame = gunDrop.CFrame task.wait(0.1) root.CFrame = oldCF
-        end
-        if not silent then
-            WindUI:Notify({ Title = "Gun", Content = "Picked up dropped Gun!", Icon = "check" })
-        end
-    else
-        if not silent then
-            WindUI:Notify({ Title = "Gun", Content = "No gun dropped on map!", Icon = "alert-circle" })
-        end
-    end
 end
 
 local function tpToLobby()
@@ -1206,17 +1238,20 @@ TabCombat:Button({
 })
 TabCombat:Button({
     Title = "Get Gun (Instant Pickup)",
-    Callback = function() tryGetGun(false) end,
+    Callback = function() instantGrabGun(nil, true) end,
 })
 TabCombat:Toggle({
-    Title = "Auto Get Gun Loop",
-    Desc = "Automatically grabs the gun silently when dropped",
+    Title = "Auto Get Gun Loop (0ms Instant)",
+    Desc = "Event-driven + Heartbeat: Grabs dropped gun in 0ms before any other players",
     Value = false,
     Callback = function(val)
         AutoGetGunEnabled = val
+        if val then
+            instantGrabGun(nil, false)
+        end
         WindUI:Notify({
             Title = "Auto Gun",
-            Content = val and "Auto Get Gun Loop Enabled!" or "Auto Get Gun Loop Disabled!",
+            Content = val and "Auto Get Gun 0ms Enabled!" or "Auto Get Gun Disabled!",
             Icon = val and "check-circle" or "x-circle"
         })
     end,
@@ -1491,7 +1526,6 @@ task.spawn(function()
     while not Destroyed do
         task.wait(0.2)
         if ESPEnabled then refreshAllESP() end
-        if AutoGetGunEnabled then pcall(function() tryGetGun(true) end) end
 
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
         if hum then
