@@ -1,5 +1,5 @@
 -- ==============================================================================
--- R1N HUB - MURDER MYSTERY 2 (INSTANT 0MS AUTO-GUN ENGINE)
+-- R1N HUB - MURDER MYSTERY 2 (GIANT POOPING SNIFF EMOTE ADDED)
 -- Source: Footagesus/WindUI (https://github.com/Footagesus/WindUI)
 -- ==============================================================================
 
@@ -279,14 +279,16 @@ end)
 --==================================================
 -- COMBAT / CORE FUNCTIONS
 --==================================================
-local function findRole(targetRole)
+local findRole, getShootRemote, getPredictedTarget, executeShoot, executeKnifeThrowNearest, killAllKnife
+
+function findRole(targetRole)
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and getRole(p) == targetRole then return p end
     end
     return nil
 end
 
-local function getShootRemote()
+function getShootRemote()
     local char = LocalPlayer.Character
     local gun = (char and char:FindFirstChild("Gun")) or LocalPlayer.Backpack:FindFirstChild("Gun")
     if gun then
@@ -305,7 +307,7 @@ local function getShootRemote()
     return nil
 end
 
-local function getPredictedTarget(character, originPos)
+function getPredictedTarget(character, originPos)
     local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("Head")
     if not root then return nil, nil end
 
@@ -333,7 +335,7 @@ local function getPredictedTarget(character, originPos)
     return predictedPos, targetCF
 end
 
-local function executeShoot(teleport)
+function executeShoot(teleport)
     local murderer = findRole("Murderer")
     if not murderer or not murderer.Character then
         WindUI:Notify({ Title = "Combat", Content = "No Murderer found alive!", Icon = "alert-triangle" })
@@ -390,7 +392,7 @@ local function executeShoot(teleport)
     end
 end
 
-local function executeKnifeThrowNearest()
+function executeKnifeThrowNearest()
     local char = LocalPlayer.Character
     local myRoot = char and char:FindFirstChild("HumanoidRootPart")
     if not myRoot then return end
@@ -437,7 +439,7 @@ local function executeKnifeThrowNearest()
     WindUI:Notify({ Title = "Combat", Content = "Knife thrown at " .. target.DisplayName, Icon = "zap" })
 end
 
-local function killAllKnife()
+function killAllKnife()
     local char = LocalPlayer.Character
     if not char then return end
 
@@ -780,23 +782,220 @@ local function tpToMap()
     end
 end
 
+--==================================================
+-- TOGGLE EMOTE ENGINE (TRIPLE-STAGE + TOGGLE ON/OFF)
+--==================================================
+local currentEmoteTrack = nil
+local currentEmoteId = nil
+
 local function playEmote(id)
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
 
     local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
-    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do track:Stop() end
+    local strId = tostring(id)
 
-    local anim = Instance.new("Animation")
-    anim.AnimationId = "rbxassetid://" .. tostring(id)
+    -- กดซ้ำท่าเดิมเพื่อหยุดท่าทันที (Toggle Stop)
+    if currentEmoteId == strId and currentEmoteTrack and currentEmoteTrack.IsPlaying then
+        currentEmoteTrack:Stop()
+        currentEmoteTrack = nil
+        currentEmoteId = nil
+        return
+    end
 
-    local success, track = pcall(function() return animator:LoadAnimation(anim) end)
-    if success and track then
-        track.Priority = Enum.AnimationPriority.Action
-        track:Play()
+    -- สลับท่า: หยุดท่าก่อนหน้าที่กำลังเล่นอยู่
+    if currentEmoteTrack then
+        currentEmoteTrack:Stop()
+        currentEmoteTrack = nil
+        currentEmoteId = nil
+    end
+
+    local numId = tonumber(id)
+    local playedTrack = nil
+
+    -- วิธีที่ 1: ดึง Animation Object ตรงจาก Catalog Asset ของร้านค้า (UGC Emotes)
+    if not playedTrack then
+        pcall(function()
+            local objs = game:GetObjects("rbxassetid://" .. strId)
+            if objs and #objs > 0 then
+                for _, obj in ipairs(objs) do
+                    local animObj = obj:IsA("Animation") and obj or obj:FindFirstChildWhichIsA("Animation", true)
+                    if animObj then
+                        playedTrack = animator:LoadAnimation(animObj)
+                        break
+                    end
+                end
+            end
+        end)
+    end
+
+    -- วิธีที่ 2: ใช้ API เล่น Emote ร้านค้าของ Roblox (Humanoid:PlayEmoteAndGetAnimTrackById)
+    if not playedTrack and numId then
+        pcall(function()
+            if hum.PlayEmoteAndGetAnimTrackById then
+                playedTrack = hum:PlayEmoteAndGetAnimTrackById(numId)
+            end
+        end)
+    end
+
+    -- วิธีที่ 3: โหลดแบบ Direct Animation ID (วิธีมาตรฐานของ Default Dance)
+    if not playedTrack then
+        pcall(function()
+            local anim = Instance.new("Animation")
+            anim.AnimationId = "rbxassetid://" .. strId
+            playedTrack = animator:LoadAnimation(anim)
+        end)
+    end
+
+    -- เล่นท่าเต้น และบันทึกแทร็กเพื่อรองรับการกดซ้ำหยุดท่า
+    if playedTrack then
+        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+            if track ~= playedTrack then
+                track:Stop()
+            end
+        end
+        playedTrack.Priority = Enum.AnimationPriority.Action4
+        playedTrack:Play()
+        currentEmoteTrack = playedTrack
+        currentEmoteId = strId
+
+        playedTrack.Stopped:Connect(function()
+            if currentEmoteTrack == playedTrack then
+                currentEmoteTrack = nil
+                currentEmoteId = nil
+            end
+        end)
+    else
+        WindUI:Notify({ Title = "Emote", Content = "Failed to load Emote: " .. strId, Icon = "alert-circle" })
     end
 end
+
+--==================================================
+-- ADIDAS AURA ANIMATION PACK ENGINE (BUNDLE 4294795)
+--==================================================
+local isAuraPackEnabled = false
+local originalAnimations = nil
+
+local AuraPackAssets = {
+    idle = "73137983344853",
+    walk = "75183215343859",
+    run = "123973978164540",
+    jump = "129527230938281",
+    fall = "99457463463495",
+    climb = "140398319728398",
+    swim = "119007025452432",
+}
+
+local resolvedAuraPack = {}
+
+local function resolveAnimationId(assetId)
+    local rawId = "rbxassetid://" .. tostring(assetId)
+    pcall(function()
+        local objs = game:GetObjects("rbxassetid://" .. tostring(assetId))
+        if objs and #objs > 0 then
+            for _, obj in ipairs(objs) do
+                if obj:IsA("Animation") and obj.AnimationId ~= "" then
+                    rawId = obj.AnimationId
+                    return
+                end
+                local found = obj:FindFirstChildWhichIsA("Animation", true)
+                if found and found.AnimationId ~= "" then
+                    rawId = found.AnimationId
+                    return
+                end
+            end
+        end
+    end)
+    return rawId
+end
+
+local function backupOriginalAnimations()
+    local char = LocalPlayer.Character
+    local animate = char and char:FindFirstChild("Animate")
+    if not animate or originalAnimations then return end
+
+    originalAnimations = {}
+    for _, child in ipairs(animate:GetChildren()) do
+        if child:IsA("StringValue") or child:IsA("Folder") then
+            originalAnimations[child.Name] = {}
+            for _, anim in ipairs(child:GetChildren()) do
+                if anim:IsA("Animation") then
+                    originalAnimations[child.Name][anim.Name] = anim.AnimationId
+                end
+            end
+        end
+    end
+end
+
+local function applyAuraAnimationPack()
+    local char = LocalPlayer.Character
+    local animate = char and char:FindFirstChild("Animate")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not animate or not hum then return end
+
+    backupOriginalAnimations()
+
+    for folderName, assetId in pairs(AuraPackAssets) do
+        local folder = animate:FindFirstChild(folderName)
+        if folder then
+            local animId = resolvedAuraPack[folderName]
+            if not animId then
+                animId = resolveAnimationId(assetId)
+                resolvedAuraPack[folderName] = animId
+            end
+
+            for _, anim in ipairs(folder:GetChildren()) do
+                if anim:IsA("Animation") then
+                    anim.AnimationId = animId
+                end
+            end
+        end
+    end
+
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if animator then
+        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+            track:Stop()
+        end
+    end
+end
+
+local function restoreDefaultAnimationPack()
+    local char = LocalPlayer.Character
+    local animate = char and char:FindFirstChild("Animate")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not animate or not originalAnimations or not hum then return end
+
+    for folderName, animList in pairs(originalAnimations) do
+        local folder = animate:FindFirstChild(folderName)
+        if folder then
+            for animName, animId in pairs(animList) do
+                local anim = folder:FindFirstChild(animName)
+                if anim and anim:IsA("Animation") then
+                    anim.AnimationId = animId
+                end
+            end
+        end
+    end
+
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if animator then
+        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+            track:Stop()
+        end
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    originalAnimations = nil
+    currentEmoteTrack = nil
+    currentEmoteId = nil
+    if isAuraPackEnabled then
+        task.wait(0.5)
+        applyAuraAnimationPack()
+    end
+end)
 
 local function changeSkin(toolName, meshId, texId)
     local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild(toolName)
@@ -983,6 +1182,7 @@ local function fullUnloadScript()
     if ESPFolder then pcall(function() ESPFolder:Destroy() end) end
     if RestoreGui then pcall(function() RestoreGui:Destroy() end) end
     if AntiFlingConn then pcall(function() AntiFlingConn:Disconnect() end) end
+    if isAuraPackEnabled then restoreDefaultAnimationPack() end
     stopFly()
 
     -- ทำลาย ScreenGui ทั้งหมดของ WindUI
@@ -1301,10 +1501,29 @@ TabPlayer:Button({
     Callback = executeDropkickFling,
 })
 
-TabPlayer:Section({ Title = "Emotes (R15)" })
-TabPlayer:Button({ Title = "Default Dance", Callback = function() playEmote("507771019") end })
-TabPlayer:Button({ Title = "Floss Dance", Callback = function() playEmote("591564736") end })
-TabPlayer:Button({ Title = "T-Pose", Callback = function() playEmote("507773208") end })
+TabPlayer:Section({ Title = "Animation Packs (R15)" })
+TabPlayer:Button({
+    Title = "Adidas Aura Pack",
+    Desc = "Toggle Adidas Aura Pack - Click again to restore default animations",
+    Callback = function()
+        isAuraPackEnabled = not isAuraPackEnabled
+        if isAuraPackEnabled then
+            applyAuraAnimationPack()
+            WindUI:Notify({ Title = "Animation Pack", Content = "Applied Adidas Aura Pack!", Icon = "sparkles" })
+        else
+            restoreDefaultAnimationPack()
+            WindUI:Notify({ Title = "Animation Pack", Content = "Restored Default Animations!", Icon = "rotate-ccw" })
+        end
+    end,
+})
+
+TabPlayer:Section({ Title = "Emotes (R15) - Click to Play / Click Again to Stop" })
+TabPlayer:Button({ Title = "Animatronic Rage ", Callback = function() playEmote("70714089777566") end })
+TabPlayer:Button({ Title = "Floating in Love", Callback = function() playEmote("97164262994588") end })
+TabPlayer:Button({ Title = "Jamal Groove", Callback = function() playEmote("104131847054135") end })
+TabPlayer:Button({ Title = "Pumpkin King", Callback = function() playEmote("105381637724646") end })
+TabPlayer:Button({ Title = "Slow Aura Run", Callback = function() playEmote("104785408689451") end })
+TabPlayer:Button({ Title = "Giant Pooping Sniff", Callback = function() playEmote("120227342448491") end })
 
 TabPlayer:Section({ Title = "Weapon Skins (Client-Side)" })
 TabPlayer:Button({ Title = "Venom Knife", Callback = function() changeSkin("Knife", "121944778", "121944781") end })
