@@ -1,5 +1,5 @@
 -- ==============================================================================
--- R1N HUB - MURDER MYSTERY 2 (GIANT POOPING SNIFF EMOTE ADDED)
+-- R1N HUB - MURDER MYSTERY 2 (EXACT UI MANAGEMENT & AUTOLOCALIZE FIX)
 -- Source: Footagesus/WindUI (https://github.com/Footagesus/WindUI)
 -- ==============================================================================
 
@@ -9,16 +9,498 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local LocalPlayer = Players.LocalPlayer
+
+--==================================================
+-- CONFIGURATION & CONSTANTS
+--==================================================
+local DISCORD_INVITE_URL = "https://discord.gg/r1nhub"
+local CUSTOM_EMOTE_FILE = "R1N_MM2_CustomEmotes_" .. tostring(LocalPlayer.UserId) .. ".json"
+
+-- GLOBAL DATA DECLARATIONS (PREVENTS LINE 1879 NIL IPAIRS BUG)
+local customEmotes = {}
+local customEmoteButtons = {}
+
+local function saveCustomEmotesToDisk()
+    pcall(function()
+        if writefile and type(customEmotes) == "table" then
+            local data = HttpService:JSONEncode(customEmotes)
+            writefile(CUSTOM_EMOTE_FILE, data)
+        end
+    end)
+end
+
+local function loadCustomEmotesFromDisk()
+    customEmotes = {}
+    pcall(function()
+        if isfile and readfile and isfile(CUSTOM_EMOTE_FILE) then
+            local raw = readfile(CUSTOM_EMOTE_FILE)
+            local decoded = HttpService:JSONDecode(raw)
+            if type(decoded) == "table" then
+                customEmotes = decoded
+            end
+        end
+    end)
+end
+
+loadCustomEmotesFromDisk()
 
 --==================================================
 -- CLEAN OLD INSTANCES
 --==================================================
 pcall(function()
+    if game.CoreGui:FindFirstChild("R1N_LOADER_SCREEN") then game.CoreGui.R1N_LOADER_SCREEN:Destroy() end
     if game.CoreGui:FindFirstChild("R1N_MM2_ESP") then game.CoreGui.R1N_MM2_ESP:Destroy() end
     if game.CoreGui:FindFirstChild("R1N_RESTORE_BAR") then game.CoreGui.R1N_RESTORE_BAR:Destroy() end
+    if game.CoreGui:FindFirstChild("R1N_QUICK_SKILLS") then game.CoreGui.R1N_QUICK_SKILLS:Destroy() end
 end)
+
+--==================================================
+-- SAFE CLIPBOARD FUNCTION (CROSS-EXECUTOR)
+--==================================================
+local function safeSetClipboard(str)
+    pcall(function()
+        if setclipboard then
+            setclipboard(str)
+        elseif toclipboard then
+            toclipboard(str)
+        elseif syn and syn.write_clipboard then
+            syn.write_clipboard(str)
+        elseif Clipboard and Clipboard.set then
+            Clipboard.set(str)
+        end
+    end)
+end
+
+--==================================================
+-- LOCALIZATION (i18n) DICTIONARY (DEFAULT: ENGLISH 🇬🇧)
+--==================================================
+local currentLang = "EN"
+
+local TRANSLATIONS = {
+    EN = {
+        Flag = "🇬🇧",
+        LangName = "English",
+        SwitchedNotify = "Language switched to English successfully!",
+        RoleTags = {
+            Loading = "⏳ Loading...",
+            Murderer = "🔪 Murderer",
+            Sheriff = "🔫 Sheriff",
+            Hero = "⭐ Hero",
+            Innocent = "🛡️ Innocent",
+            Dead = "💀 Dead",
+        },
+        Tabs = {
+            Main = "Main",
+            ESP = "ESP",
+            Combat = "Combat",
+            Player = "Player",
+            Teleports = "Teleports",
+            Settings = "Settings",
+        },
+        Main = {
+            SecInfo = "Hub Information",
+            WelcomeTitle = "Welcome to R1N Hub!",
+            WelcomeDesc = "Check live role in topbar. Press [—] to collapse UI.",
+            SecDiscord = "Discord Community",
+            DiscordTitle = "💬 Official Discord Server",
+            DiscordDesc = "Join our official Discord community for script updates, support, and discussions!",
+            CopyDiscord = "Copy Discord Invite Link",
+            CopyDiscordDesc = "Click to copy invite URL to your clipboard",
+            CopiedNotify = "Discord invite link copied to clipboard!",
+            Reload = "Reload UI",
+            ReloadDesc = "Refreshes user interface",
+            Rejoin = "Rejoin Place",
+            RejoinDesc = "Re-connect to same game server",
+            ServerHop = "Server Hop (Populated Server)",
+            ServerHopDesc = "Joins an active public server with players",
+        },
+        ESP = {
+            SecVisuals = "Visuals",
+            PlayerGunESP = "Player & Gun ESP",
+            PlayerGunDesc = "Highlights players & gun drop",
+            GunDropTag = "★ GUN DROPPED!",
+        },
+        Combat = {
+            SecSheriff = "Sheriff / Hero Actions",
+            TPShoot = "TP Shoot Murderer",
+            TPShootDesc = "Teleport to Murderer & shoot (99% Hit)",
+            AimShoot = "Aim Lock Murderer",
+            AimShootDesc = "Shoots Murderer with prediction",
+            SecMurderer = "Murderer Actions",
+            KnifeThrow = "Aim Lock Knife Throw",
+            KnifeThrowDesc = "Throws knife at nearest player",
+            KillAll = "Kill All (Knife)",
+            KillAllDesc = "Instantly touches everyone with knife",
+            SecFling = "Fling Controls",
+            FlingMurd = "Fling Murderer",
+            FlingSher = "Fling Sheriff / Hero",
+            SecGun = "Gun Drop Actions",
+            TPGun = "Teleport to Gun Drop",
+            GetGun = "Get Gun (Instant Pickup)",
+            AutoGun = "Auto Get Gun Loop",
+            AutoGunDesc = "Grabs dropped gun automatically",
+            SecQuickSkills = "Quick Action Skill Buttons & Keys",
+            TogQuickSkills = "Right-Side Skill Buttons [Q / E]",
+            TogQuickSkillsDesc = "Shows MM2-style circular buttons & hotkeys for Murderer & Sheriff",
+        },
+        Player = {
+            SecDef = "Defense & Movement",
+            AntiFling = "Anti-Fling",
+            AntiFlingDesc = "Shields against fling & collision",
+            Noclip = "Noclip",
+            NoclipDesc = "Walk through all walls",
+            Fly = "Fly (Cross-Platform)",
+            FlyDesc = "Fly with joystick / WASD",
+            Speed = "Speed Boost",
+            SpeedDesc = "Increases walkspeed",
+            SecDK = "Dropkick Fling (R15)",
+            Dropkick = "Dropkick Fling (1-Shot)",
+            DropkickDesc = "1-shot fling dropkick attack",
+            SecPack = "Animation Packs (R15)",
+            AuraPack = "Adidas Aura Pack",
+            AuraPackDesc = "Custom aura movement pack",
+            SecEmote = "Emotes & Custom Packs (R15)",
+            DefaultDance = "Default Dance",
+            FloatingInLove = "Floating in Love",
+            JamalGroove = "Jamal Groove",
+            PumpkinKing = "Pumpkin King",
+            SlowAuraRun = "Slow Aura Run",
+            PoopingSniff = "Giant Pooping Sniff",
+        },
+        Teleports = {
+            SecLoc = "Locations",
+            TPLobby = "Teleport to Lobby",
+            TPMap = "Teleport to Current Map",
+            SecTarget = "Target Player Teleport, Fling & View",
+            SelectTarget = "Select Player Target",
+            TPTarget = "Teleport to Target",
+            FlingTarget = "Fling Target",
+            ViewTarget = "View Player (Spectate)",
+            ViewTargetDesc = "Follow target player's camera view",
+            RefreshTarget = "Refresh Player List",
+        },
+        Settings = {
+            SecEmotesMgr = "Custom Emotes & Packs Manager",
+            EmoteId = "Asset / Bundle ID or URL",
+            EmoteIdPh = "Paste Asset / Bundle ID or Roblox URL here...",
+            AddEmote = "Add Custom Emote / Pack",
+            AddEmoteDesc = "Auto-detects Emote or full Animation Pack & saves locally",
+            SelectDelete = "Select Item to Delete",
+            DeleteEmote = "Delete Selected Item",
+            DeleteEmoteDesc = "Delete selected emote/pack from list",
+            SecTheme = "UI Customization",
+            UITransparency = "Background Transparency",
+            UITransparencyDesc = "Adjust window background opacity (0% - 90%)",
+            SelectTheme = "Select UI Theme",
+            Unload = "Unload / Close Script",
+            UnloadDesc = "Close UI & cleanup scripts",
+        }
+    },
+    TH = {
+        Flag = "🇹🇭",
+        LangName = "ไทย",
+        SwitchedNotify = "เปลี่ยนภาษาเป็น ภาษาไทย เรียบร้อย!",
+        RoleTags = {
+            Loading = "⏳ กำลังโหลด...",
+            Murderer = "🔪 ฆาตกร",
+            Sheriff = "🔫 มือปืน",
+            Hero = "⭐ ฮีโร่",
+            Innocent = "🛡️ ผู้บริสุทธิ์",
+            Dead = "💀 ตายแล้ว",
+        },
+        Tabs = {
+            Main = "หน้าหลัก",
+            ESP = "การมองเห็น",
+            Combat = "ต่อสู้",
+            Player = "ผู้เล่น",
+            Teleports = "วาร์ป",
+            Settings = "การตั้งค่า",
+        },
+        Main = {
+            SecInfo = "ข้อมูลสคริปต์",
+            WelcomeTitle = "ยินดีต้อนรับสู่ R1N Hub!",
+            WelcomeDesc = "ดูบทบาทที่แถบบน กด [—] เพื่อย่อหน้าต่าง",
+            SecDiscord = "คอมมูนิตี้ Discord",
+            DiscordTitle = "💬 เซิร์ฟเวอร์ Discord ทางการ",
+            DiscordDesc = "เข้าร่วม Discord ทางการ เพื่อรับอัปเดตสคริปต์ แจ้งปัญหา และพูดคุยกับทีมงาน!",
+            CopyDiscord = "คัดลอกลิงก์ Discord",
+            CopyDiscordDesc = "กดเพื่อคัดลอกลิงก์เชิญเข้า Discord ลงคลิปบอร์ด",
+            CopiedNotify = "คัดลอกลิงก์ Discord ลงคลิปบอร์ดเรียบร้อย!",
+            Reload = "รีโหลด UI",
+            ReloadDesc = "รีเฟรชหน้าต่างเมนู",
+            Rejoin = "เข้าเซิร์ฟใหม่ (Rejoin)",
+            RejoinDesc = "เชื่อมต่อเข้าห้องเดิมอีกครั้ง",
+            ServerHop = "ค้นหาเซิร์ฟใหม่ (คนเยอะ/ปกติ)",
+            ServerHopDesc = "ค้นหาและย้ายเข้าเซิร์ฟเวอร์สาธารณะที่มีคนเล่นปกติ",
+        },
+        ESP = {
+            SecVisuals = "การมองเห็น (ESP)",
+            PlayerGunESP = "มองผู้เล่นและปืนตก",
+            PlayerGunDesc = "ไฮไลท์ตำแหน่งทุกคนและปืนที่ตก",
+            GunDropTag = "★ ปืนตกอยู่ที่นี่!",
+        },
+        Combat = {
+            SecSheriff = "ฟังก์ชันมือปืน (Sheriff / Hero)",
+            TPShoot = "วาร์ปยิงฆาตกร",
+            TPShootDesc = "วาร์ปประชิดตัวฆาตกรแล้วยิงทันที (โดน 99%)",
+            AimShoot = "ล็อคเป้ายิงฆาตกร",
+            AimShootDesc = "คำนวณวิถีกระสุนล่วงหน้าแล้วยิง",
+            SecMurderer = "ฟังก์ชันฆาตกร (Murderer)",
+            KnifeThrow = "ล็อคเป้าปามีด",
+            KnifeThrowDesc = "ปามีดใส่ผู้เล่นใกล้ตัวอัตโนมัติ",
+            KillAll = "ฆ่าทุกคนในแมพ (Kill All)",
+            KillAllDesc = "ฟันทุกคนในเซิร์ฟพร้อมกันทันที",
+            SecFling = "ระบบชนกระเด็น (Fling)",
+            FlingMurd = "ชนฆาตกรกระเด็น",
+            FlingSher = "ชนมือปืน/ฮีโร่กระเด็น",
+            SecGun = "ฟังก์ชันปืนตก (Gun Drop)",
+            TPGun = "วาร์ปไปที่ปืนตก",
+            GetGun = "เก็บปืนทันที (0ms Pickup)",
+            AutoGun = "ออโต้เก็บปืนอัตโนมัติ",
+            AutoGunDesc = "วาร์ปเก็บปืนทันทีใน 0ms แรกที่ปืนตก",
+            SecQuickSkills = "ปุ่มสกิลด่วน & คีย์ลัด [Q / E]",
+            TogQuickSkills = "แสดงปุ่มสกิลด่วนด้านขวา [Q / E]",
+            TogQuickSkillsDesc = "แสดงปุ่มวงกลมสไตล์ MM2 พร้อมปุ่มลัด Q/E สำหรับฆาตกรและมือปืน",
+        },
+        Player = {
+            SecDef = "การป้องกันและการเคลื่อนที่",
+            AntiFling = "กันคนชนกระเด็น (Anti-Fling)",
+            AntiFlingDesc = "โล่ 3 ชั้น ป้องกันการถูกชนกระเด็น",
+            Noclip = "เดินทะลุกำแพง (Noclip)",
+            NoclipDesc = "เดินทะลุกำแพงและสิ่งกีดขวางทั้งหมด",
+            Fly = "บินอิสระ (Fly)",
+            FlyDesc = "บินได้ทั้งมือถือ (จอยสติ๊ก) และคอม (WASD)",
+            Speed = "วิ่งเร็ว (Speed Boost)",
+            SpeedDesc = "เพิ่มความเร็วการเดินและวิ่ง",
+            SecDK = "ท่าเตะกระเด็น (Dropkick Fling R15)",
+            Dropkick = "กระโดดเตะกระเด็น (1-Shot)",
+            DropkickDesc = "ท่าเตะหมุนตัว ดีดศัตรูกระเด็นหลุดแมพ",
+            SecPack = "ชุดท่าทางเคลื่อนไหว (R15)",
+            AuraPack = "ชุดท่า Adidas Aura Pack",
+            AuraPackDesc = "เปลี่ยนท่าเดิน/วิ่ง/กระโดดเป็น Aura Pack",
+            SecEmote = "ท่าเต้น & ชุดท่าทางส่วนตัว (R15)",
+            DefaultDance = "ท่าเต้นเริ่มต้น (Default Dance)",
+            FloatingInLove = "ลอยตัวในความรัก (Floating in Love)",
+            JamalGroove = "จามาลกรูฟ (Jamal Groove)",
+            PumpkinKing = "ราชาฟักทอง (Pumpkin King)",
+            SlowAuraRun = "วิ่งสโลว์ออร่า (Slow Aura Run)",
+            PoopingSniff = "ดมขี้ (Giant Pooping Sniff)",
+        },
+        Teleports = {
+            SecLoc = "สถานที่ต่างๆ",
+            TPLobby = "วาร์ปไปล็อบบี้",
+            TPMap = "วาร์ปเข้าสู่แมพที่เล่นอยู่",
+            SecTarget = "วาร์ป ชนกระเด็น และส่องดูผู้เล่น",
+            SelectTarget = "เลือกผู้เล่นเป้าหมาย",
+            TPTarget = "วาร์ปไปหาผู้เล่นที่เลือก",
+            FlingTarget = "ชนผู้เล่นที่เลือกให้กระเด็น",
+            ViewTarget = "ส่องดูผู้เล่น (View Player)",
+            ViewTargetDesc = "เปลี่ยนมุมมองกล้องไปติดตามผู้เล่นที่เลือก",
+            RefreshTarget = "รีเฟรชรายชื่อผู้เล่น",
+        },
+        Settings = {
+            SecEmotesMgr = "จัดการท่าเต้นและแพ็คท่าทาง (Emotes & Packs)",
+            EmoteId = "รหัส ID หรือ ลิงก์ร้านค้า",
+            EmoteIdPh = "วางรหัส ID หรือ ลิงก์ Roblox ที่นี่...",
+            AddEmote = "เพิ่มท่าเต้น / ชุดท่าทางใหม่",
+            AddEmoteDesc = "ตรวจจับท่าเต้นเดี่ยวหรือชุด Animation Pack อัตโนมัติ",
+            SelectDelete = "เลือกรายการที่ต้องการลบ",
+            DeleteEmote = "ลบรายการที่เลือก",
+            DeleteEmoteDesc = "ลบท่าเต้น/แพ็คท่าทางออกจากเครื่อง",
+            SecTheme = "ปรับแต่งหน้าต่าง UI",
+            UITransparency = "ปรับความโปร่งใสพื้นหลัง UI",
+            UITransparencyDesc = "ปรับระดับความโปร่งใสของหน้าต่าง (0% - 90%)",
+            SelectTheme = "เลือกธีมสี UI",
+            Unload = "ปิดการทำงานสคริปต์ทั้งหมด",
+            UnloadDesc = "ลบ UI ทั้งหมดและคืนค่าตัวเกม 100%",
+        }
+    }
+}
+
+--==================================================
+-- STRICT 100% ROCKET LOADING SCREEN ENGINE
+--==================================================
+local function createModernLoadingScreen()
+    local loaderGui = Instance.new("ScreenGui")
+    loaderGui.Name = "R1N_LOADER_SCREEN"
+    loaderGui.ResetOnSpawn = false
+    loaderGui.DisplayOrder = 9999999
+    loaderGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    loaderGui.AutoLocalize = false
+    loaderGui.Parent = game.CoreGui
+
+    local card = Instance.new("Frame")
+    card.Name = "Card"
+    card.Size = UDim2.fromOffset(336, 140)
+    card.Position = UDim2.new(0.5, -168, 0.5, -70)
+    card.BackgroundColor3 = Color3.fromRGB(16, 16, 22)
+    card.BorderSizePixel = 0
+    card.Parent = loaderGui
+
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 16)
+    local stroke = Instance.new("UIStroke", card)
+    stroke.Color = Color3.fromRGB(0, 185, 255)
+    stroke.Thickness = 1.6
+
+    local title = Instance.new("TextLabel", card)
+    title.Size = UDim2.new(1, -30, 0, 24)
+    title.Position = UDim2.new(0, 16, 0, 16)
+    title.BackgroundTransparency = 1
+    title.Text = "💨 R1N Hub"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 18
+    title.AutoLocalize = false
+    title.TextXAlignment = Enum.TextXAlignment.Left
+
+    local subTitle = Instance.new("TextLabel", card)
+    subTitle.Size = UDim2.new(1, -30, 0, 16)
+    subTitle.Position = UDim2.new(0, 16, 0, 40)
+    subTitle.BackgroundTransparency = 1
+    subTitle.Text = "Murder Mystery 2 • Universal v2.0"
+    subTitle.TextColor3 = Color3.fromRGB(130, 135, 155)
+    subTitle.Font = Enum.Font.Gotham
+    subTitle.TextSize = 11
+    subTitle.AutoLocalize = false
+    subTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+    local statusContainer = Instance.new("Frame", card)
+    statusContainer.Size = UDim2.new(1, -32, 0, 18)
+    statusContainer.Position = UDim2.new(0, 16, 0, 68)
+    statusContainer.BackgroundTransparency = 1
+
+    local statusLabel = Instance.new("TextLabel", statusContainer)
+    statusLabel.Size = UDim2.new(1, -55, 1, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "Connecting CDN..."
+    statusLabel.TextColor3 = Color3.fromRGB(0, 255, 160)
+    statusLabel.Font = Enum.Font.GothamBold
+    statusLabel.TextSize = 12
+    statusLabel.AutoLocalize = false
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local percentLabel = Instance.new("TextLabel", statusContainer)
+    percentLabel.Size = UDim2.new(0, 50, 1, 0)
+    percentLabel.Position = UDim2.new(1, -50, 0, 0)
+    percentLabel.BackgroundTransparency = 1
+    percentLabel.Text = "12%"
+    percentLabel.TextColor3 = Color3.fromRGB(0, 185, 255)
+    percentLabel.Font = Enum.Font.GothamBold
+    percentLabel.TextSize = 13
+    percentLabel.AutoLocalize = false
+    percentLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+    local barBg = Instance.new("Frame", card)
+    barBg.Size = UDim2.new(1, -32, 0, 8)
+    barBg.Position = UDim2.new(0, 16, 0, 96)
+    barBg.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
+    barBg.BorderSizePixel = 0
+    Instance.new("UICorner", barBg).CornerRadius = UDim.new(1, 0)
+
+    local barFill = Instance.new("Frame", barBg)
+    barFill.Size = UDim2.new(0.12, 0, 1, 0)
+    barFill.BackgroundColor3 = Color3.fromRGB(0, 185, 255)
+    barFill.BorderSizePixel = 0
+    Instance.new("UICorner", barFill).CornerRadius = UDim.new(1, 0)
+
+    local grad = Instance.new("UIGradient", barFill)
+    grad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 185, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 255, 160))
+    })
+
+    local currentPercent = 12
+    local currentBaseText = "Connecting CDN"
+    local isFinished = false
+
+    task.spawn(function()
+        local dotStates = {".", "..", "...", ""}
+        local dotIdx = 1
+        while not isFinished do
+            statusLabel.Text = currentBaseText .. dotStates[dotIdx]
+            dotIdx = (dotIdx % #dotStates) + 1
+            task.wait(0.20)
+        end
+    end)
+
+    task.spawn(function()
+        local steps = {
+            { target = 28, text = "Fetching WindUI", delay = 0.08 },
+            { target = 50, text = "Unpacking Assets", delay = 0.09 },
+            { target = 72, text = "Compiling Library", delay = 0.08 },
+            { target = 86, text = "Hooking MM2 Remotes", delay = 0.10 },
+            { target = 94, text = "Building UI Tabs", delay = 0.12 },
+        }
+
+        for _, s in ipairs(steps) do
+            currentBaseText = s.text
+            while currentPercent < s.target and not isFinished do
+                currentPercent = currentPercent + 1
+                percentLabel.Text = string.format("%d%%", currentPercent)
+                TweenService:Create(barFill, TweenInfo.new(0.10, Enum.EasingStyle.Linear), {
+                    Size = UDim2.new(math.clamp(currentPercent / 100, 0.05, 1), 0, 1, 0)
+                }):Play()
+                task.wait(s.delay)
+            end
+            if isFinished then break end
+        end
+    end)
+
+    local function finishAndShowUI(showUICallback)
+        isFinished = true
+        currentBaseText = "Ready! Launching R1N Hub"
+        statusLabel.Text = "Ready! Launching R1N Hub!"
+
+        TweenService:Create(barFill, TweenInfo.new(0.20, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Size = UDim2.new(1, 0, 1, 0)
+        }):Play()
+
+        local startP = currentPercent
+        for i = 1, 8 do
+            local p = math.floor(startP + ((100 - startP) * (i / 8)))
+            percentLabel.Text = string.format("%d%%", p)
+            task.wait(0.018)
+        end
+
+        percentLabel.Text = "100%"
+        percentLabel.TextColor3 = Color3.fromRGB(0, 255, 160)
+        statusLabel.Text = "Ready! Launching R1N Hub!"
+        task.wait(0.22)
+
+        local tween = TweenService:Create(card, TweenInfo.new(0.30, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Size = UDim2.fromOffset(290, 116),
+            Position = UDim2.new(0.5, -145, 0.5, -58),
+            BackgroundTransparency = 1
+        })
+        tween:Play()
+
+        for _, child in ipairs(card:GetDescendants()) do
+            if child:IsA("TextLabel") then
+                child.AutoLocalize = false
+                TweenService:Create(child, TweenInfo.new(0.22), { TextTransparency = 1 }):Play()
+            elseif child:IsA("UIStroke") then
+                TweenService:Create(child, TweenInfo.new(0.22), { Transparency = 1 }):Play()
+            elseif child:IsA("Frame") then
+                TweenService:Create(child, TweenInfo.new(0.22), { BackgroundTransparency = 1 }):Play()
+            end
+        end
+
+        task.wait(0.32)
+        pcall(function() loaderGui:Destroy() end)
+
+        if showUICallback then
+            showUICallback()
+        end
+    end
+
+    return finishAndShowUI
+end
+
+local finishAndShowUI = createModernLoadingScreen()
 
 --==================================================
 -- LOAD WINDUI LIBRARY
@@ -34,21 +516,218 @@ local SpeedEnabled = false
 local NoclipEnabled = false
 local FlyEnabled = false
 local AntiFlingEnabled = false
-local ChromaEnabled = false
 local isFlinging = false 
 local isDropkicking = false
+local isSpectating = false
+local spectateConn = nil
 local Destroyed = false
 local TargetPlayerName = nil
 
--- สี Neon คมชัด สดใส 100%
 local COLORS = {
-    Murderer = Color3.fromRGB(255, 30, 30),      -- แดงสด Vivid Neon Red
-    Sheriff = Color3.fromRGB(0, 185, 255),       -- ฟ้าสด Neon Electric Blue
-    Hero = Color3.fromRGB(255, 230, 0),          -- เหลืองทองสว่าง Bright Gold
-    Innocent = Color3.fromRGB(0, 255, 128),      -- เขียวสด Neon Emerald Green
-    Dead = Color3.fromRGB(150, 150, 165),        -- เทาสว่าง Steel Grey
-    GunDrop = Color3.fromRGB(255, 230, 0)        -- เหลืองทองสว่าง
+    Murderer = Color3.fromRGB(255, 30, 30),
+    Sheriff = Color3.fromRGB(0, 185, 255),
+    Hero = Color3.fromRGB(255, 230, 0),
+    Innocent = Color3.fromRGB(0, 255, 128),
+    Dead = Color3.fromRGB(255, 255, 255),
+    GunDrop = Color3.fromRGB(255, 230, 0)
 }
+
+local function setElementLayoutOrder(element, order)
+    if not element then return end
+    pcall(function()
+        if element.ElementFrame and element.ElementFrame:IsA("GuiObject") then
+            element.ElementFrame.LayoutOrder = order
+            return
+        end
+        for _, val in pairs(element) do
+            if type(val) == "table" and val.UIElements and val.UIElements.Main and val.UIElements.Main:IsA("GuiObject") then
+                val.UIElements.Main.LayoutOrder = order
+                return
+            end
+        end
+    end)
+end
+
+local function updateElementText(element, title, desc)
+    if not element then return end
+    pcall(function()
+        if title and element.SetTitle then element:SetTitle(title) end
+        if desc and element.SetDesc then element:SetDesc(desc) end
+    end)
+    pcall(function()
+        if element.UIElements then
+            if title and element.UIElements.Title and element.UIElements.Title:IsA("TextLabel") then
+                element.UIElements.Title.AutoLocalize = false
+                element.UIElements.Title.Text = title
+            end
+            if desc and element.UIElements.Desc and element.UIElements.Desc:IsA("TextLabel") then
+                element.UIElements.Desc.AutoLocalize = false
+                element.UIElements.Desc.Text = desc
+            end
+        end
+    end)
+end
+
+-- Forward declaration of tab objects
+local UI = {}
+local TabMain, TabESP, TabCombat, TabPlayer, TabTP, TabSettings
+
+-- TAB KEYS MAPPING FOR CLEAN BILINGUAL SWITCHING
+local TAB_KEYS = { "Main", "ESP", "Combat", "Player", "Teleports", "Settings" }
+
+-- ROBLOX AUTOLOCALIZE KILLER FUNCTION (PREVENTS ROBLOX MACHINE TRANSLATION OVERRIDE)
+local function disableRobloxAutoLocalize(obj)
+    pcall(function()
+        if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+            obj.AutoLocalize = false
+        end
+        for _, d in ipairs(obj:GetDescendants()) do
+            if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+                d.AutoLocalize = false
+            end
+        end
+    end)
+end
+
+local function updateSidebarTabs(lang)
+    local targetLang = lang or currentLang or "EN"
+    local T = TRANSLATIONS[targetLang] or TRANSLATIONS.EN
+    local tabObjects = { TabMain, TabESP, TabCombat, TabPlayer, TabTP, TabSettings }
+
+    -- 1. Direct Tab Objects Update
+    for i, tabObj in ipairs(tabObjects) do
+        local key = TAB_KEYS[i]
+        local title = T.Tabs[key] or key
+        if tabObj then
+            tabObj.Title = title
+            pcall(function()
+                if tabObj.SetTitle then tabObj:SetTitle(title) end
+            end)
+            pcall(function()
+                if tabObj.UIElements and tabObj.UIElements.Main then
+                    for _, tl in ipairs(tabObj.UIElements.Main:GetDescendants()) do
+                        if tl:IsA("TextLabel") then
+                            tl.AutoLocalize = false
+                            tl.Text = title
+                        end
+                    end
+                end
+                if tabObj.UIElements and tabObj.UIElements.TabItem then
+                    for _, tl in ipairs(tabObj.UIElements.TabItem:GetDescendants()) do
+                        if tl:IsA("TextLabel") then
+                            tl.AutoLocalize = false
+                            tl.Text = title
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    -- 2. WindUI Window.TabModule.Tabs Array Update
+    pcall(function()
+        if Window and Window.TabModule and Window.TabModule.Tabs then
+            for i = 1, 6 do
+                local tabData = Window.TabModule.Tabs[i]
+                local key = TAB_KEYS[i]
+                local title = T.Tabs[key] or key
+                if tabData and title then
+                    tabData.Title = title
+                    if tabData.UIElements and tabData.UIElements.Main then
+                        for _, tl in ipairs(tabData.UIElements.Main:GetDescendants()) do
+                            if tl:IsA("TextLabel") then
+                                tl.AutoLocalize = false
+                                tl.Text = title
+                            end
+                        end
+                    end
+                    if tabData.UIElements and tabData.UIElements.TabItem then
+                        for _, tl in ipairs(tabData.UIElements.TabItem:GetDescendants()) do
+                            if tl:IsA("TextLabel") then
+                                tl.AutoLocalize = false
+                                tl.Text = title
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- REAL-TIME BACKGROUND GUARD (ENFORCES SELECTED LANGUAGE ON SIDEBAR & SUPPRESSES AUTOLOCALIZE)
+task.spawn(function()
+    while not Destroyed do
+        task.wait(0.1)
+        pcall(function()
+            local T = TRANSLATIONS[currentLang] or TRANSLATIONS.EN
+            if Window and Window.UIElements and Window.UIElements.SideBar then
+                local sideFrame = Window.UIElements.SideBar:FindFirstChild("Frame") or Window.UIElements.SideBar
+                local btnIdx = 0
+                for _, child in ipairs(sideFrame:GetChildren()) do
+                    if child:IsA("GuiObject") and not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
+                        btnIdx = btnIdx + 1
+                        local tl = child:FindFirstChildWhichIsA("TextLabel", true)
+                        local key = TAB_KEYS[btnIdx]
+                        local targetText = key and T.Tabs[key]
+                        if tl and targetText then
+                            tl.AutoLocalize = false
+                            if tl.Text ~= targetText then
+                                tl.Text = targetText
+                            end
+                        end
+                    end
+                end
+            end
+            if Window and Window.UIElements and Window.UIElements.Main then
+                disableRobloxAutoLocalize(Window.UIElements.Main)
+            end
+        end)
+    end
+end)
+
+--==================================================
+-- TRUE DARK GLASS WINDOW TRANSPARENCY ENGINE
+--==================================================
+local function setCleanWindowTransparency(percent)
+    local val = math.clamp(tonumber(percent) or 0, 0, 90)
+    local alpha = val / 100
+
+    pcall(function()
+        local main = Window.UIElements and Window.UIElements.Main
+        if not main then return end
+
+        if Window.AcrylicPaint and Window.AcrylicPaint.Model then
+            Window.AcrylicPaint.Model.Transparency = 1
+        end
+        if Window.AcrylicPaint and Window.AcrylicPaint.Frame then
+            Window.AcrylicPaint.Frame.Visible = (val == 0)
+        end
+
+        local mainBar = Window.UIElements.MainBar
+        if mainBar then
+            local mbBg = mainBar:FindFirstChild("Background")
+            if mbBg then
+                if mbBg:IsA("ImageLabel") then
+                    mbBg.ImageTransparency = 1
+                    mbBg.ImageColor3 = Color3.fromRGB(16, 16, 20)
+                elseif mbBg:IsA("Frame") then
+                    mbBg.BackgroundTransparency = 1
+                end
+            end
+        end
+
+        local rootBg = main:FindFirstChild("Background")
+        if rootBg then
+            if rootBg:IsA("ImageLabel") then
+                rootBg.ImageTransparency = alpha
+                rootBg.ImageColor3 = Color3.fromRGB(16, 16, 20)
+            elseif rootBg:IsA("Frame") then
+                rootBg.BackgroundTransparency = alpha
+            end
+        end
+    end)
+end
 
 --==================================================
 -- DATA SPY & ESP
@@ -138,6 +817,7 @@ local function updateESP(player)
         billboard.Size = UDim2.fromOffset(180, 40)
         billboard.StudsOffset = Vector3.new(0, 3, 0)
         billboard.AlwaysOnTop = true
+        billboard.AutoLocalize = false
         billboard.Parent = folder
 
         local text = Instance.new("TextLabel")
@@ -146,6 +826,7 @@ local function updateESP(player)
         text.Size = UDim2.fromScale(1, 1)
         text.Font = Enum.Font.GothamBold
         text.TextSize = 14
+        text.AutoLocalize = false
         text.TextStrokeTransparency = 0
         text.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
         text.Parent = billboard
@@ -160,9 +841,11 @@ local function updateESP(player)
         bb.Adornee = character:FindFirstChild("Head")
         local tl = bb:FindFirstChild("TL")
         if tl then
+            tl.AutoLocalize = false
             tl.TextColor3 = color
+            local roleText = TRANSLATIONS[currentLang].RoleTags[role] or role
             if role == "Murderer" or role == "Sheriff" or role == "Hero" then
-                tl.Text = player.DisplayName .. " [" .. role .. "]"
+                tl.Text = player.DisplayName .. " [" .. roleText .. "]"
             else
                 tl.Text = player.DisplayName
             end
@@ -190,9 +873,10 @@ local function updateGunDropESP()
             
             local bb = Instance.new("BillboardGui", gunFolder)
             bb.Name = "BB"
-            bb.Size = UDim2.fromOffset(150, 40)
+            bb.Size = UDim2.fromOffset(160, 40)
             bb.StudsOffset = Vector3.new(0, 2, 0)
             bb.AlwaysOnTop = true
+            bb.AutoLocalize = false
             
             local tl = Instance.new("TextLabel", bb)
             tl.Name = "TL"
@@ -200,13 +884,18 @@ local function updateGunDropESP()
             tl.Size = UDim2.fromScale(1, 1)
             tl.Font = Enum.Font.GothamBold
             tl.TextSize = 14
+            tl.AutoLocalize = false
             tl.TextColor3 = COLORS.GunDrop
             tl.TextStrokeTransparency = 0
             tl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-            tl.Text = "★ GUN DROPPED!"
+            tl.Text = TRANSLATIONS[currentLang].ESP.GunDropTag
         end
         gunFolder.HL.Adornee = gunDrop
         gunFolder.BB.Adornee = gunDrop
+        if gunFolder.BB:FindFirstChild("TL") then
+            gunFolder.BB.TL.AutoLocalize = false
+            gunFolder.BB.TL.Text = TRANSLATIONS[currentLang].ESP.GunDropTag
+        end
     else
         if gunFolder then gunFolder:Destroy() end
     end
@@ -243,16 +932,15 @@ local function instantGrabGun(gunDropPart, notify)
             root.CFrame = oldCF
         end
         if notify then
-            WindUI:Notify({ Title = "Gun", Content = "Picked up dropped Gun!", Icon = "check" })
+            WindUI:Notify({ Title = "Gun", Content = (currentLang == "TH" and "เก็บปืนที่ตกเรียบร้อยแล้ว!" or "Picked up dropped Gun!"), Icon = "check" })
         end
     else
         if notify then
-            WindUI:Notify({ Title = "Gun", Content = "No gun dropped on map!", Icon = "alert-circle" })
+            WindUI:Notify({ Title = "Gun", Content = (currentLang == "TH" and "ไม่พบปืนตกในแมพ!" or "No gun dropped on map!"), Icon = "alert-circle" })
         end
     end
 end
 
--- Event-driven detection: ตรวจจับปืนทันทีใน 0ms แรกที่ปืนตกพื้น
 workspace.DescendantAdded:Connect(function(child)
     if AutoGetGunEnabled and not Destroyed then
         if child.Name == "GunDrop" and child:IsA("BasePart") then
@@ -261,7 +949,6 @@ workspace.DescendantAdded:Connect(function(child)
     end
 end)
 
--- Heartbeat ultra-fast loop: ตรวจสอบและเก็บปืนทุกเฟรมแบบไม่มีดีเลย์
 RunService.Heartbeat:Connect(function()
     if AutoGetGunEnabled and not Destroyed then
         local gd = workspace:FindFirstChild("GunDrop", true)
@@ -308,37 +995,89 @@ function getShootRemote()
 end
 
 function getPredictedTarget(character, originPos)
-    local root = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("Head")
-    if not root then return nil, nil end
+    if not character then return nil, nil, false end
 
+    -- 1. Prioritize UpperTorso (R15) or Torso (R6) for the largest and most reliable bullet hitbox!
+    local targetPart = character:FindFirstChild("UpperTorso")
+        or character:FindFirstChild("Torso")
+        or character:FindFirstChild("HumanoidRootPart")
+        or character:FindFirstChild("Head")
+    if not targetPart then return nil, nil, false end
+
+    local root = character:FindFirstChild("HumanoidRootPart") or targetPart
     local hum = character:FindFirstChildOfClass("Humanoid")
-    local vel = root.AssemblyLinearVelocity or root.Velocity or Vector3.zero
 
-    if vel.Magnitude > 80 and hum then
-        vel = hum.MoveDirection * hum.WalkSpeed
+    -- 2. Base position: center of the chest/torso
+    local basePos = targetPart.Position
+
+    -- 3. True ground velocity calculation
+    local vel = root.AssemblyLinearVelocity or root.Velocity or Vector3.zero
+    if hum and hum.MoveDirection.Magnitude > 0 then
+        local ws = (hum.WalkSpeed > 0) and hum.WalkSpeed or 16
+        if vel.Magnitude < 2 or vel.Magnitude > 40 then
+            vel = hum.MoveDirection * ws
+        else
+            local horiz = hum.MoveDirection * ws
+            vel = Vector3.new(horiz.X, vel.Y, horiz.Z)
+        end
+    elseif vel.Magnitude < 1 then
+        vel = Vector3.zero
     end
 
-    local ping = 0.05
+    -- 4. Calculate accurate one-way ping (RTT / 2) - avoids overshooting!
+    local ping = 0.035
     pcall(function()
         local pingStat = LocalPlayer:GetNetworkPing()
-        if pingStat and pingStat > 0 then ping = pingStat end
+        if pingStat and pingStat > 0 then
+            ping = math.clamp(pingStat / 2, 0.015, 0.12)
+        end
     end)
 
-    local dist = (root.Position - originPos).Magnitude
-    local bulletSpeed = 450
-    local timeToHit = (dist / bulletSpeed) + ping
+    -- 5. Distance and bullet lead prediction
+    local dist = (basePos - originPos).Magnitude
+    local bulletSpeed = 440 -- MM2 revolver projectile speed
+    local travelTime = (dist / bulletSpeed) + ping
 
-    local predictedPos = root.Position + (vel * timeToHit)
-    predictedPos = Vector3.new(predictedPos.X, root.Position.Y + 0.5, predictedPos.Z)
+    -- Dampen vertical jump bounce to prevent shooting above head
+    local horizontalVel = Vector3.new(vel.X, 0, vel.Z)
+    local clampedY = math.clamp(vel.Y, -10, 15) * 0.4
 
-    local targetCF = CFrame.new(predictedPos, predictedPos + (vel.Magnitude > 0 and vel or root.CFrame.LookVector))
-    return predictedPos, targetCF
+    local predictedPos
+    if horizontalVel.Magnitude < 1.0 then
+        predictedPos = basePos
+    else
+        predictedPos = basePos + (horizontalVel * travelTime) + Vector3.new(0, clampedY * travelTime, 0)
+    end
+
+    -- 6. Raycast wall check: test line of sight
+    local isWallBlocked = false
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = { LocalPlayer.Character, character, ESPFolder }
+    rayParams.IgnoreWater = true
+
+    local rayResult = workspace:Raycast(originPos, (predictedPos - originPos), rayParams)
+    if rayResult then
+        isWallBlocked = true
+        -- If chest is blocked, check if Head is peeking above cover
+        local head = character:FindFirstChild("Head")
+        if head then
+            local headRay = workspace:Raycast(originPos, (head.Position - originPos), rayParams)
+            if not headRay then
+                predictedPos = head.Position
+                isWallBlocked = false
+            end
+        end
+    end
+
+    local targetCF = CFrame.new(predictedPos, predictedPos + (horizontalVel.Magnitude > 0 and horizontalVel or root.CFrame.LookVector))
+    return predictedPos, targetCF, isWallBlocked
 end
 
 function executeShoot(teleport)
     local murderer = findRole("Murderer")
     if not murderer or not murderer.Character then
-        WindUI:Notify({ Title = "Combat", Content = "No Murderer found alive!", Icon = "alert-triangle" })
+        WindUI:Notify({ Title = "Combat", Content = (currentLang == "TH" and "ไม่พบฆาตกรที่ยังมีชีวิตอยู่!" or "No Murderer found alive!"), Icon = "alert-triangle" })
         return
     end
     
@@ -352,14 +1091,14 @@ function executeShoot(teleport)
 
     local gun = char:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Gun")
     if not gun then
-        WindUI:Notify({ Title = "Combat", Content = "Equip Gun first!", Icon = "alert-circle" })
+        WindUI:Notify({ Title = "Combat", Content = (currentLang == "TH" and "กรุณาถือปืนก่อนใช้งาน!" or "Equip Gun first!"), Icon = "alert-circle" })
         return
     end
 
     local hum = char:FindFirstChildOfClass("Humanoid")
     if gun.Parent == LocalPlayer.Backpack and hum then
         hum:EquipTool(gun)
-        local t = tick() + 0.5
+        local t = tick() + 0.4
         repeat task.wait() until char:FindFirstChild("Gun") or tick() > t
     end
 
@@ -369,26 +1108,116 @@ function executeShoot(teleport)
     local oldCF = myRoot.CFrame
 
     if teleport then
-        local tpPos = mRoot.CFrame * CFrame.new(0, 1, 2)
-        myRoot.CFrame = tpPos
-        myRoot.AssemblyLinearVelocity = Vector3.zero
-        task.wait(0.04)
+        -- 1. TP SHOOT (Always Behind Murderer Dynamic Auto-Track Engine)
+        local stickOffset = CFrame.new(0, 1.2, 3.2) -- 3.2 studs directly behind murderer
+        local startTime = tick()
+        local duration = 0.14 -- Active stick duration before returning
 
-        local freshTargetPos = mRoot.Position + Vector3.new(0, 0.5, 0)
-        local originCF = CFrame.new(myRoot.Position, freshTargetPos)
-        shootRemote:FireServer(originCF, CFrame.new(freshTargetPos))
+        -- Temporary Noclip so our character doesn't bump into murderer or walls
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
 
-        task.wait(0.12)
+        local function getBehindCF()
+            if not mChar or not mRoot or not mRoot.Parent then return nil end
+            local behindPos = (mRoot.CFrame * stickOffset).Position
+            local aimTarget = mRoot.Position + Vector3.new(0, 0.8, 0)
+            return CFrame.new(behindPos, aimTarget), aimTarget
+        end
+
+        -- Immediately glue behind them on frame 0
+        local initialCF, initialTarget = getBehindCF()
+        if initialCF then
+            myRoot.CFrame = initialCF
+            myRoot.AssemblyLinearVelocity = Vector3.zero
+            myRoot.AssemblyAngularVelocity = Vector3.zero
+        end
+
+        -- Continuously glue our character behind the Murderer on EVERY frame!
+        -- If Murderer spins around or walks, our character rotates dynamically with them!
+        local stickConn
+        stickConn = RunService.Heartbeat:Connect(function()
+            if tick() - startTime >= duration or not mRoot or not mRoot.Parent or not myRoot or not myRoot.Parent then
+                if stickConn then
+                    stickConn:Disconnect()
+                    stickConn = nil
+                end
+                return
+            end
+            local curCF = getBehindCF()
+            if curCF then
+                myRoot.CFrame = curCF
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+            end
+        end)
+
+        -- Allow a tiny fraction of a second for server sync, then fire point-blank into their back
+        task.wait(0.03)
+        local currentBehindCF, currentAimTarget = getBehindCF()
+        if currentBehindCF and currentAimTarget then
+            local originPos = currentBehindCF.Position
+            local originCF = CFrame.new(originPos, currentAimTarget)
+            
+            -- Dual format remote dispatch for 100% point-blank hit
+            shootRemote:FireServer(originCF, CFrame.new(currentAimTarget))
+            shootRemote:FireServer(originCF, currentAimTarget)
+        end
+
+        -- Wait out the rest of the duration while remaining glued behind them
+        local remainingTime = duration - (tick() - startTime)
+        if remainingTime > 0 then
+            task.wait(remainingTime)
+        end
+
+        if stickConn then
+            stickConn:Disconnect()
+            stickConn = nil
+        end
+
+        -- Snap back to original location safely
         myRoot.CFrame = oldCF
         myRoot.AssemblyLinearVelocity = Vector3.zero
-        WindUI:Notify({ Title = "Combat", Content = "TP Shot Murderer!", Icon = "crosshair" })
+        myRoot.AssemblyAngularVelocity = Vector3.zero
+        
+        WindUI:Notify({ 
+            Title = "Combat", 
+            Content = (currentLang == "TH" and "วาร์ปยิงด้านหลังฆาตกรสำเร็จ!" or "TP Shot Behind Murderer!"), 
+            Icon = "crosshair" 
+        })
     else
-        local predictedPos, targetCF = getPredictedTarget(mChar, myRoot.Position)
+        -- SUPER ACCURATE AIM LOCK
+        local originPos = myRoot.Position + Vector3.new(0, 1.4, 0) -- Shoulder height clears floors/railings!
+        local predictedPos, targetCF, isWallBlocked = getPredictedTarget(mChar, originPos)
         if not predictedPos then return end
 
-        local originCF = CFrame.new(myRoot.Position, predictedPos)
+        if isWallBlocked then
+            WindUI:Notify({
+                Title = "Aim Lock",
+                Content = (currentLang == "TH" and "⚠️ ฆาตกรอยู่หลังกำแพง (อาจโดนสิ่งกีดขวาง)!" or "⚠️ Murderer is behind a wall!"),
+                Icon = "alert-circle"
+            })
+        end
+
+        -- Snap Character & Camera towards target for 100% directional alignment
+        pcall(function()
+            local lookAtXZ = Vector3.new(predictedPos.X, myRoot.Position.Y, predictedPos.Z)
+            myRoot.CFrame = CFrame.new(myRoot.Position, lookAtXZ)
+            workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, predictedPos)
+        end)
+
+        local originCF = CFrame.new(originPos, predictedPos)
+
+        -- Fire dual format (CFrame & Vector3) for universal MM2 remote support
         shootRemote:FireServer(originCF, targetCF)
-        WindUI:Notify({ Title = "Combat", Content = "Aim Locked Murderer!", Icon = "crosshair" })
+        shootRemote:FireServer(originCF, predictedPos)
+
+        local distM = math.floor((mRoot.Position - myRoot.Position).Magnitude)
+        WindUI:Notify({
+            Title = "Combat",
+            Content = (currentLang == "TH" and ("ล็อคเป้ายิงฆาตกรสำเร็จ! (ระยะ " .. distM .. "m)") or ("Aim Locked Murderer! (Dist " .. distM .. "m)")),
+            Icon = "crosshair"
+        })
     end
 end
 
@@ -412,13 +1241,13 @@ function executeKnifeThrowNearest()
     end
 
     if not target then 
-        WindUI:Notify({ Title = "Combat", Content = "No alive targets nearby!", Icon = "alert-circle" })
+        WindUI:Notify({ Title = "Combat", Content = (currentLang == "TH" and "ไม่มีเป้าหมายใกล้เคียง!" or "No alive targets nearby!"), Icon = "alert-circle" })
         return 
     end
 
     local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
     if not knife then
-        WindUI:Notify({ Title = "Combat", Content = "Equip Knife first!", Icon = "alert-circle" })
+        WindUI:Notify({ Title = "Combat", Content = (currentLang == "TH" and "กรุณาถือมีดก่อนใช้งาน!" or "Equip Knife first!"), Icon = "alert-circle" })
         return 
     end
 
@@ -431,12 +1260,22 @@ function executeKnifeThrowNearest()
     local throwRemote = events and events:FindFirstChild("KnifeThrown")
     if not throwRemote then return end
 
-    local predictedPos, targetCF = getPredictedTarget(target.Character, myRoot.Position)
+    local originPos = myRoot.Position + Vector3.new(0, 1.4, 0)
+    local predictedPos, targetCF = getPredictedTarget(target.Character, originPos)
     if not predictedPos then return end
 
-    local originCF = CFrame.new(myRoot.Position, predictedPos)
+    -- Snap character and camera towards target
+    pcall(function()
+        local lookAtXZ = Vector3.new(predictedPos.X, myRoot.Position.Y, predictedPos.Z)
+        myRoot.CFrame = CFrame.new(myRoot.Position, lookAtXZ)
+        workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, predictedPos)
+    end)
+
+    local originCF = CFrame.new(originPos, predictedPos)
     throwRemote:FireServer(originCF, targetCF)
-    WindUI:Notify({ Title = "Combat", Content = "Knife thrown at " .. target.DisplayName, Icon = "zap" })
+    throwRemote:FireServer(originCF, predictedPos)
+
+    WindUI:Notify({ Title = "Combat", Content = (currentLang == "TH" and ("ปามีดใส่ " .. target.DisplayName .. " สำเร็จ!") or ("Knife thrown at " .. target.DisplayName)), Icon = "zap" })
 end
 
 function killAllKnife()
@@ -445,7 +1284,7 @@ function killAllKnife()
 
     local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
     if not knife then 
-        WindUI:Notify({ Title = "Combat", Content = "Equip Knife to Kill All!", Icon = "alert-circle" })
+        WindUI:Notify({ Title = "Combat", Content = (currentLang == "TH" and "กรุณาถือมีดก่อนใช้งาน Kill All!" or "Equip Knife to Kill All!"), Icon = "alert-circle" })
         return 
     end
     
@@ -473,7 +1312,7 @@ function killAllKnife()
             end
         end
     end
-    WindUI:Notify({ Title = "Combat", Content = "Kill All applied to " .. killCount .. " players!", Icon = "skull" })
+    WindUI:Notify({ Title = "Combat", Content = (currentLang == "TH" and ("ฟันผู้เล่นทั้งหมด " .. killCount .. " คนเรียบร้อย!") or ("Kill All applied to " .. killCount .. " players!")), Icon = "skull" })
 end
 
 --==================================================
@@ -492,7 +1331,7 @@ local function SkidFling(targetPlr)
     local Handle = Accessory and Accessory:FindFirstChild("Handle")
 
     if not Character or not Humanoid or not RootPart or not TCharacter or not TRootPart then 
-        WindUI:Notify({ Title = "Fling", Content = "Target not found or invalid!", Icon = "alert-circle" })
+        WindUI:Notify({ Title = "Fling", Content = (currentLang == "TH" and "ไม่พบเป้าหมาย หรือตัวละครไม่ถูกต้อง!" or "Target not found or invalid!"), Icon = "alert-circle" })
         return 
     end
 
@@ -567,7 +1406,7 @@ local function SkidFling(targetPlr)
 
     workspace.FallenPartsDestroyHeight = oldFPDH
     isFlinging = false
-    WindUI:Notify({ Title = "Fling", Content = "Fling completed!", Icon = "check" })
+    WindUI:Notify({ Title = "Fling", Content = (currentLang == "TH" and "ชนกระเด็นสำเร็จ!" or "Fling completed!"), Icon = "check" })
 end
 
 --==================================================
@@ -584,7 +1423,7 @@ local function executeDropkickFling()
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
     if hum.RigType ~= Enum.HumanoidRigType.R15 then 
-        WindUI:Notify({ Title = "Dropkick", Content = "Character must be R15 Rig!", Icon = "alert-triangle" })
+        WindUI:Notify({ Title = "Dropkick", Content = (currentLang == "TH" and "ตัวละครต้องเป็นแบบ R15 เท่านั้น!" or "Character must be R15 Rig!"), Icon = "alert-triangle" })
         return 
     end
 
@@ -596,7 +1435,7 @@ local function executeDropkickFling()
     if not s or not track then return end
 
     isDropkicking = true
-    WindUI:Notify({ Title = "Dropkick", Content = "Dropkick Fling triggered!", Icon = "zap" })
+    WindUI:Notify({ Title = "Dropkick", Content = (currentLang == "TH" and "เริ่มใช้ท่าเตะกระเด็น Dropkick!" or "Dropkick Fling triggered!"), Icon = "zap" })
 
     task.spawn(function()
         local noclipConn = RunService.Stepped:Connect(function()
@@ -724,7 +1563,7 @@ local function tpToLobby()
             end
             if #validParts > 0 then
                 root.CFrame = validParts[math.random(1, #validParts)].CFrame * CFrame.new(0, 3, 0)
-                WindUI:Notify({ Title = "Teleport", Content = "Teleported to Lobby!", Icon = "map-pin" })
+                WindUI:Notify({ Title = "Teleport", Content = (currentLang == "TH" and "วาร์ปไปล็อบบี้สำเร็จ!" or "Teleported to Lobby!"), Icon = "map-pin" })
                 return
             end
         end
@@ -732,11 +1571,11 @@ local function tpToLobby()
         local spawnLoc = lobby:FindFirstChildWhichIsA("SpawnLocation", true) or lobby:FindFirstChildWhichIsA("BasePart", true)
         if spawnLoc then
             root.CFrame = spawnLoc.CFrame * CFrame.new(0, 3, 0)
-            WindUI:Notify({ Title = "Teleport", Content = "Teleported to Lobby!", Icon = "map-pin" })
+            WindUI:Notify({ Title = "Teleport", Content = (currentLang == "TH" and "วาร์ปไปล็อบบี้สำเร็จ!" or "Teleported to Lobby!"), Icon = "map-pin" })
             return
         end
     end
-    WindUI:Notify({ Title = "Teleport", Content = "Lobby not found!", Icon = "alert-circle" })
+    WindUI:Notify({ Title = "Teleport", Content = (currentLang == "TH" and "ไม่พบล็อบบี้ในเกม!" or "Lobby not found!"), Icon = "alert-circle" })
 end
 
 local function tpToMap()
@@ -746,7 +1585,7 @@ local function tpToMap()
 
     local map = getMap()
     if not map then 
-        WindUI:Notify({ Title = "Teleport", Content = "No active map in game round!", Icon = "alert-triangle" })
+        WindUI:Notify({ Title = "Teleport", Content = (currentLang == "TH" and "ไม่มีแมพที่กำลังเล่นในรอบนี้!" or "No active map in game round!"), Icon = "alert-triangle" })
         return
     end
 
@@ -758,7 +1597,7 @@ local function tpToMap()
         end
         if #validParts > 0 then
             root.CFrame = validParts[math.random(1, #validParts)].CFrame * CFrame.new(0, 3, 0)
-            WindUI:Notify({ Title = "Teleport", Content = "Teleported to Map Spawn!", Icon = "map-pin" })
+            WindUI:Notify({ Title = "Teleport", Content = (currentLang == "TH" and "วาร์ปเข้าสู่แมพสำเร็จ!" or "Teleported to Map Spawn!"), Icon = "map-pin" })
             return
         end
     end
@@ -768,7 +1607,7 @@ local function tpToMap()
         local coinPart = coins:FindFirstChildWhichIsA("BasePart", true)
         if coinPart then
             root.CFrame = coinPart.CFrame * CFrame.new(0, 3, 0)
-            WindUI:Notify({ Title = "Teleport", Content = "Teleported to Map Coins!", Icon = "map-pin" })
+            WindUI:Notify({ Title = "Teleport", Content = (currentLang == "TH" and "วาร์ปไปจุดเก็บเหรียญในแมพสำเร็จ!" or "Teleported to Map Coins!"), Icon = "map-pin" })
             return
         end
     end
@@ -776,10 +1615,157 @@ local function tpToMap()
     for _, part in ipairs(map:GetDescendants()) do
         if part:IsA("BasePart") and part.CanCollide and not part.Name:lower():find("kill") and not part.Name:lower():find("fall") then
             root.CFrame = part.CFrame * CFrame.new(0, 3, 0)
-            WindUI:Notify({ Title = "Teleport", Content = "Teleported to Map!", Icon = "map-pin" })
+            WindUI:Notify({ Title = "Teleport", Content = (currentLang == "TH" and "วาร์ปเข้าสู่แมพสำเร็จ!" or "Teleported to Map!"), Icon = "map-pin" })
             return
         end
     end
+end
+
+--==================================================
+-- VIEW TARGET PLAYER (SPECTATE ENGINE)
+--==================================================
+local function toggleViewTargetPlayer(val)
+    isSpectating = val
+    if spectateConn then
+        spectateConn:Disconnect()
+        spectateConn = nil
+    end
+
+    if isSpectating then
+        if not TargetPlayerName then
+            WindUI:Notify({ Title = "View Player", Content = (currentLang == "TH" and "กรุณาเลือกผู้เล่นเป้าหมายก่อน!" or "Please select a target first!"), Icon = "alert-circle" })
+            isSpectating = false
+            return
+        end
+
+        local p = Players:FindFirstChild(TargetPlayerName)
+        if not p or not p.Character or not p.Character:FindFirstChildOfClass("Humanoid") then
+            WindUI:Notify({ Title = "View Player", Content = (currentLang == "TH" and "ไม่พบตัวละครของผู้เล่นเป้าหมาย!" or "Target character not found!"), Icon = "alert-circle" })
+            isSpectating = false
+            return
+        end
+
+        workspace.CurrentCamera.CameraSubject = p.Character:FindFirstChildOfClass("Humanoid")
+        WindUI:Notify({
+            Title = "View Player",
+            Content = (currentLang == "TH" and ("กำลังส่องดู: " .. p.DisplayName) or ("Spectating: " .. p.DisplayName)),
+            Icon = "eye"
+        })
+
+        spectateConn = RunService.RenderStepped:Connect(function()
+            if not isSpectating then return end
+            local targetPlr = Players:FindFirstChild(TargetPlayerName)
+            if targetPlr and targetPlr.Character and targetPlr.Character:FindFirstChildOfClass("Humanoid") then
+                if workspace.CurrentCamera.CameraSubject ~= targetPlr.Character:FindFirstChildOfClass("Humanoid") then
+                    workspace.CurrentCamera.CameraSubject = targetPlr.Character:FindFirstChildOfClass("Humanoid")
+                end
+            else
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                    workspace.CurrentCamera.CameraSubject = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                end
+            end
+        end)
+    else
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            workspace.CurrentCamera.CameraSubject = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        end
+        WindUI:Notify({
+            Title = "View Player",
+            Content = (currentLang == "TH" and "คืนมุมมองกล้องปกติเรียบร้อย!" or "Reset camera view to normal!"),
+            Icon = "rotate-ccw"
+        })
+    end
+end
+
+--==================================================
+-- SERVER HOP ENGINE (ACTIVE / POPULATED SERVERS)
+--==================================================
+local function serverHopClosest()
+    WindUI:Notify({
+        Title = "Server Hop",
+        Content = (currentLang == "TH" and "กำลังค้นหาเซิร์ฟเวอร์ที่มีผู้เล่นปกติ..." or "Searching for populated active server..."),
+        Icon = "refresh-cw"
+    })
+
+    task.spawn(function()
+        local placeId = game.PlaceId
+        local currentJobId = game.JobId
+        local foundServer = nil
+
+        local function fetchServers()
+            -- Use sortOrder=Desc to get active, populated game rooms instead of ghost servers
+            local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100"
+            local success, res = pcall(function()
+                return game:HttpGetAsync(url)
+            end)
+            if not success or not res then
+                success, res = pcall(function()
+                    if request then
+                        return request({Url = url, Method = "GET"}).Body
+                    elseif syn and syn.request then
+                        return syn.request({Url = url, Method = "GET"}).Body
+                    elseif http and http.request then
+                        return http.request({Url = url, Method = "GET"}).Body
+                    end
+                end)
+            end
+            if success and res then
+                local s, decoded = pcall(function() return HttpService:JSONDecode(res) end)
+                if s and decoded and decoded.data then
+                    return decoded.data
+                end
+            end
+            return nil
+        end
+
+        local servers = fetchServers()
+        if servers and #servers > 0 then
+            local goodServers = {}
+            local fallbackServers = {}
+
+            for _, server in ipairs(servers) do
+                local playing = tonumber(server.playing) or 0
+                local maxP = tonumber(server.maxPlayers) or 12
+                if server.id ~= currentJobId and playing < maxP then
+                    -- Normal active servers: between 5 and maxP-1 players
+                    if playing >= 5 and playing <= (maxP - 1) then
+                        table.insert(goodServers, server)
+                    elseif playing > 1 and playing <= (maxP - 1) then
+                        table.insert(fallbackServers, server)
+                    end
+                end
+            end
+
+            -- Pick randomly from good populated servers so we don't land in empty rooms
+            if #goodServers > 0 then
+                foundServer = goodServers[math.random(1, #goodServers)]
+            elseif #fallbackServers > 0 then
+                foundServer = fallbackServers[math.random(1, #fallbackServers)]
+            end
+        end
+
+        if foundServer then
+            local pCount = tostring(foundServer.playing or "?")
+            local mCount = tostring(foundServer.maxPlayers or 12)
+            WindUI:Notify({
+                Title = "Server Hop",
+                Content = (currentLang == "TH" and ("พบห้องปกติ (" .. pCount .. "/" .. mCount .. " คน) กำลังเชื่อมต่อ...") or ("Connecting to populated server (" .. pCount .. "/" .. mCount .. " players)...")),
+                Icon = "check-circle"
+            })
+            task.wait(0.6)
+            TeleportService:TeleportToPlaceInstance(placeId, foundServer.id, LocalPlayer)
+        else
+            WindUI:Notify({
+                Title = "Server Hop",
+                Content = (currentLang == "TH" and "กำลังย้ายเข้าเซิร์ฟเวอร์สาธารณะ..." or "Teleporting to public server..."),
+                Icon = "refresh-cw"
+            })
+            task.wait(0.5)
+            pcall(function()
+                TeleportService:Teleport(placeId, LocalPlayer)
+            end)
+        end
+    end)
 end
 
 --==================================================
@@ -796,7 +1782,6 @@ local function playEmote(id)
     local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
     local strId = tostring(id)
 
-    -- กดซ้ำท่าเดิมเพื่อหยุดท่าทันที (Toggle Stop)
     if currentEmoteId == strId and currentEmoteTrack and currentEmoteTrack.IsPlaying then
         currentEmoteTrack:Stop()
         currentEmoteTrack = nil
@@ -804,7 +1789,6 @@ local function playEmote(id)
         return
     end
 
-    -- สลับท่า: หยุดท่าก่อนหน้าที่กำลังเล่นอยู่
     if currentEmoteTrack then
         currentEmoteTrack:Stop()
         currentEmoteTrack = nil
@@ -814,7 +1798,6 @@ local function playEmote(id)
     local numId = tonumber(id)
     local playedTrack = nil
 
-    -- วิธีที่ 1: ดึง Animation Object ตรงจาก Catalog Asset ของร้านค้า (UGC Emotes)
     if not playedTrack then
         pcall(function()
             local objs = game:GetObjects("rbxassetid://" .. strId)
@@ -830,7 +1813,6 @@ local function playEmote(id)
         end)
     end
 
-    -- วิธีที่ 2: ใช้ API เล่น Emote ร้านค้าของ Roblox (Humanoid:PlayEmoteAndGetAnimTrackById)
     if not playedTrack and numId then
         pcall(function()
             if hum.PlayEmoteAndGetAnimTrackById then
@@ -839,7 +1821,6 @@ local function playEmote(id)
         end)
     end
 
-    -- วิธีที่ 3: โหลดแบบ Direct Animation ID (วิธีมาตรฐานของ Default Dance)
     if not playedTrack then
         pcall(function()
             local anim = Instance.new("Animation")
@@ -848,7 +1829,6 @@ local function playEmote(id)
         end)
     end
 
-    -- เล่นท่าเต้น และบันทึกแทร็กเพื่อรองรับการกดซ้ำหยุดท่า
     if playedTrack then
         for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
             if track ~= playedTrack then
@@ -867,14 +1847,15 @@ local function playEmote(id)
             end
         end)
     else
-        WindUI:Notify({ Title = "Emote", Content = "Failed to load Emote: " .. strId, Icon = "alert-circle" })
+        WindUI:Notify({ Title = "Emote", Content = (currentLang == "TH" and ("ไม่สามารถเล่นท่า: " .. strId) or ("Failed to load Emote: " .. strId)), Icon = "alert-circle" })
     end
 end
 
 --==================================================
--- ADIDAS AURA ANIMATION PACK ENGINE (BUNDLE 4294795)
+-- ANIMATION PACK ENGINE & AUTO-DETECTOR
 --==================================================
 local isAuraPackEnabled = false
+local activeCustomPackId = nil
 local originalAnimations = nil
 
 local AuraPackAssets = {
@@ -928,7 +1909,7 @@ local function backupOriginalAnimations()
     end
 end
 
-local function applyAuraAnimationPack()
+local function applyCustomAnimationPack(animMap)
     local char = LocalPlayer.Character
     local animate = char and char:FindFirstChild("Animate")
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -936,15 +1917,10 @@ local function applyAuraAnimationPack()
 
     backupOriginalAnimations()
 
-    for folderName, assetId in pairs(AuraPackAssets) do
+    for folderName, rawVal in pairs(animMap) do
         local folder = animate:FindFirstChild(folderName)
         if folder then
-            local animId = resolvedAuraPack[folderName]
-            if not animId then
-                animId = resolveAnimationId(assetId)
-                resolvedAuraPack[folderName] = animId
-            end
-
+            local animId = (typeof(rawVal) == "string" and rawVal:find("rbxassetid://")) and rawVal or resolveAnimationId(rawVal)
             for _, anim in ipairs(folder:GetChildren()) do
                 if anim:IsA("Animation") then
                     anim.AnimationId = animId
@@ -956,9 +1932,27 @@ local function applyAuraAnimationPack()
     local animator = hum:FindFirstChildOfClass("Animator")
     if animator then
         for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-            track:Stop()
+            pcall(function() track:Stop(0.05) end)
         end
     end
+
+    -- Reload Animate LocalScript so new pack plays instantly with no frozen T-pose!
+    pcall(function()
+        animate.Disabled = true
+        task.wait(0.03)
+        animate.Disabled = false
+    end)
+end
+
+local function applyAuraAnimationPack()
+    for folderName, assetId in pairs(AuraPackAssets) do
+        local animId = resolvedAuraPack[folderName]
+        if not animId then
+            animId = resolveAnimationId(assetId)
+            resolvedAuraPack[folderName] = animId
+        end
+    end
+    applyCustomAnimationPack(resolvedAuraPack)
 end
 
 local function restoreDefaultAnimationPack()
@@ -982,35 +1976,146 @@ local function restoreDefaultAnimationPack()
     local animator = hum:FindFirstChildOfClass("Animator")
     if animator then
         for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-            track:Stop()
+            pcall(function() track:Stop(0.05) end)
         end
     end
+
+    pcall(function()
+        animate.Disabled = true
+        task.wait(0.03)
+        animate.Disabled = false
+    end)
+end
+
+local function inspectAndResolveAsset(idStr)
+    local cleanId = tostring(idStr):match("(%d+)")
+    if not cleanId then return false, {}, nil end
+
+    local isPack = false
+    local packMap = {}
+    local resolvedName = nil
+
+    -- 1. Try Bundle API (Handles Roblox bundle URLs and Bundle IDs e.g. /bundles/83)
+    pcall(function()
+        local bUrl = "https://catalog.roblox.com/v1/bundles/" .. cleanId .. "/details"
+        local res = nil
+        if game.HttpGetAsync then
+            res = game:HttpGetAsync(bUrl)
+        elseif request then
+            res = request({Url = bUrl, Method = "GET"}).Body
+        elseif syn and syn.request then
+            res = syn.request({Url = bUrl, Method = "GET"}).Body
+        elseif http and http.request then
+            res = http.request({Url = bUrl, Method = "GET"}).Body
+        end
+
+        if res then
+            local decoded = HttpService:JSONDecode(res)
+            if decoded and decoded.name then
+                resolvedName = decoded.name
+                local bundleType = decoded.bundleType or ""
+                local items = decoded.items or {}
+                local animTypes = {"idle", "walk", "run", "jump", "fall", "climb", "swim"}
+                local matchCount = 0
+
+                for _, itm in ipairs(items) do
+                    local nLower = tostring(itm.name):lower()
+                    for _, aType in ipairs(animTypes) do
+                        if nLower:find(aType) then
+                            packMap[aType] = tostring(itm.id)
+                            matchCount = matchCount + 1
+                            break
+                        end
+                    end
+                end
+
+                if matchCount >= 2 or bundleType:lower():find("animation") then
+                    isPack = true
+                end
+            end
+        end
+    end)
+
+    -- 2. Try AssetService:GetBundleDetailsAsync
+    if not isPack then
+        pcall(function()
+            local AssetService = game:GetService("AssetService")
+            local bDetails = AssetService:GetBundleDetailsAsync(tonumber(cleanId))
+            if bDetails and bDetails.Name then
+                resolvedName = bDetails.Name
+                local animTypes = {"idle", "walk", "run", "jump", "fall", "climb", "swim"}
+                local matchCount = 0
+                for _, itm in ipairs(bDetails.Items or {}) do
+                    local nLower = tostring(itm.Name):lower()
+                    for _, aType in ipairs(animTypes) do
+                        if nLower:find(aType) then
+                            packMap[aType] = tostring(itm.Id)
+                            matchCount = matchCount + 1
+                            break
+                        end
+                    end
+                end
+                if matchCount >= 2 or tostring(bDetails.BundleType):lower():find("animation") then
+                    isPack = true
+                end
+            end
+        end)
+    end
+
+    -- 3. Try game:GetObjects (Handles Asset Packages with animation tracks)
+    if not isPack then
+        pcall(function()
+            local objs = game:GetObjects("rbxassetid://" .. cleanId)
+            if objs and #objs > 0 then
+                local animTypes = {"idle", "walk", "run", "jump", "fall", "climb", "swim"}
+                local foundCount = 0
+                for _, obj in ipairs(objs) do
+                    for _, aName in ipairs(animTypes) do
+                        local found = obj:FindFirstChild(aName, true) or (obj.Name:lower():find(aName) and obj)
+                        if found then
+                            foundCount = foundCount + 1
+                            local animObj = found:IsA("Animation") and found or found:FindFirstChildWhichIsA("Animation", true)
+                            if animObj and animObj.AnimationId ~= "" then
+                                packMap[aName] = animObj.AnimationId
+                            end
+                        end
+                    end
+                end
+                if foundCount >= 2 then
+                    isPack = true
+                end
+            end
+        end)
+    end
+
+    return isPack, packMap, resolvedName
 end
 
 LocalPlayer.CharacterAdded:Connect(function()
     originalAnimations = nil
     currentEmoteTrack = nil
     currentEmoteId = nil
+    if isSpectating then
+        toggleViewTargetPlayer(false)
+    end
+    task.delay(0.5, function()
+        updateQuickSkillButtons(getRole(LocalPlayer))
+    end)
     if isAuraPackEnabled then
         task.wait(0.5)
         applyAuraAnimationPack()
-    end
-end)
-
-local function changeSkin(toolName, meshId, texId)
-    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild(toolName)
-    if not tool then tool = LocalPlayer.Backpack:FindFirstChild(toolName) end
-    if tool then
-        local handle = tool:FindFirstChild("Handle")
-        if handle then
-            local mesh = handle:FindFirstChildOfClass("SpecialMesh") or Instance.new("SpecialMesh", handle)
-            mesh.MeshType = Enum.MeshType.FileMesh
-            mesh.MeshId = "rbxassetid://" .. meshId
-            mesh.TextureId = texId and ("rbxassetid://" .. texId) or ""
-            WindUI:Notify({ Title = "Skins", Content = "Applied " .. toolName .. " Skin!", Icon = "sparkles" })
+    elseif activeCustomPackId then
+        task.wait(0.5)
+        if type(customEmotes) == "table" then
+            for _, entry in ipairs(customEmotes) do
+                if tostring(entry.Id) == activeCustomPackId and entry.PackMap then
+                    applyCustomAnimationPack(entry.PackMap)
+                    break
+                end
+            end
         end
     end
-end
+end)
 
 local function toggleNoclip(val)
     NoclipEnabled = val
@@ -1054,11 +2159,20 @@ local function stopFly()
 end
 
 --==================================================
--- CREATE WINDUI WINDOW (IGNORE ALERTS BY DEFAULT)
+-- COMPACT & MOBILE RESPONSIVE WINDOW SIZE CALCULATION
 --==================================================
-local DEFAULT_SIZE = UDim2.fromOffset(600, 440)
+local camera = workspace.CurrentCamera
+local viewportSize = camera and camera.ViewportSize or Vector2.new(1280, 720)
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+local defaultWidth = isMobile and math.clamp(viewportSize.X * 0.70, 440, 500) or 500
+local defaultHeight = isMobile and math.clamp(viewportSize.Y * 0.72, 260, 310) or 320
+local DEFAULT_SIZE = UDim2.fromOffset(defaultWidth, defaultHeight)
 local TOPBAR_HEIGHT = 44
 
+--==================================================
+-- CREATE WINDUI WINDOW (EXACT MANAGEMENT STRUCTURE)
+--==================================================
 local Window = WindUI:CreateWindow({
     Title = "R1N Hub",
     Author = "by R1N Team",
@@ -1066,8 +2180,12 @@ local Window = WindUI:CreateWindow({
     Icon = "solar:wind-bold",
     Theme = "Dark",
     Size = DEFAULT_SIZE,
+    MinSize = Vector2.new(400, 240),
+    MaxSize = Vector2.new(900, 600),
+    Resizable = true,
+    SideBarWidth = isMobile and 135 or 155,
     ToggleKey = Enum.KeyCode.RightShift,
-    IgnoreAlerts = true, -- ข้ามการถาม Close Window? ปิดทันที
+    IgnoreAlerts = true,
     Topbar = {
         Height = TOPBAR_HEIGHT,
         ButtonsType = "Default",
@@ -1075,34 +2193,42 @@ local Window = WindUI:CreateWindow({
 })
 Window.IgnoreAlerts = true
 
--- LIVE ROLE TAG BADGE (ช่องมุมบนแสดงบทบาทเรียลไทม์ โทนสีสดใส)
+pcall(function()
+    if Window.UIElements and Window.UIElements.Main then
+        Window.UIElements.Main.Visible = false
+        disableRobloxAutoLocalize(Window.UIElements.Main)
+    end
+end)
+
 local RoleTag = Window:Tag({
-    Title = "Loading...",
-    Icon = "solar:user-bold",
+    Title = TRANSLATIONS[currentLang].RoleTags.Loading,
     Color = COLORS.Innocent,
     Border = true,
 })
 
 --==================================================
--- ZERO-MOTION TOPBAR COLLAPSE ENGINE (TOP-ANCHORED)
+-- ZERO-MOTION TOPBAR COLLAPSE ENGINE (EXACT MATCH)
 --==================================================
 local isCollapsed = false
 local isToggling = false
-local savedExpandedHeight = 440
+local savedExpandedHeight = defaultHeight
 
--- ตั้งค่า AnchorPoint.Y ให้อยู่ที่ขอบบน (0) ตั้งแต่เริ่ม เพื่อให้บาร์บนล็อคอยู่กับที่ 100%
 task.spawn(function()
     task.wait(0.1)
     local mainFrame = Window.UIElements and Window.UIElements.Main
-    if mainFrame and mainFrame.AnchorPoint.Y ~= 0 then
-        local currentH = mainFrame.Size.Y.Offset > 0 and mainFrame.Size.Y.Offset or 440
-        mainFrame.Position = UDim2.new(
-            mainFrame.Position.X.Scale,
-            mainFrame.Position.X.Offset,
-            mainFrame.Position.Y.Scale,
-            mainFrame.Position.Y.Offset - (currentH * mainFrame.AnchorPoint.Y)
-        )
-        mainFrame.AnchorPoint = Vector2.new(0.5, 0)
+    if mainFrame then
+        if mainFrame.AnchorPoint.Y ~= 0 then
+            local currentH = mainFrame.Size.Y.Offset > 0 and mainFrame.Size.Y.Offset or defaultHeight
+            mainFrame.Position = UDim2.new(
+                mainFrame.Position.X.Scale,
+                mainFrame.Position.X.Offset,
+                mainFrame.Position.Y.Scale,
+                mainFrame.Position.Y.Offset - (currentH * mainFrame.AnchorPoint.Y)
+            )
+            mainFrame.AnchorPoint = Vector2.new(0.5, 0)
+        end
+        mainFrame.ClipsDescendants = false
+        disableRobloxAutoLocalize(mainFrame)
     end
 end)
 
@@ -1117,13 +2243,8 @@ local function toggleCollapse()
     local bg = mainFrame:FindFirstChild("Background")
     local innerMain = mainFrame:FindFirstChild("Main")
 
-    mainFrame.ClipsDescendants = true
-    if bg then bg.ClipsDescendants = true end
-    if innerMain then innerMain.ClipsDescendants = true end
-
-    -- มั่นใจว่า AnchorPoint.Y เป็น 0 เสมอ
     if mainFrame.AnchorPoint.Y ~= 0 then
-        local currentH = mainFrame.Size.Y.Offset > 0 and mainFrame.Size.Y.Offset or 440
+        local currentH = mainFrame.Size.Y.Offset > 0 and mainFrame.Size.Y.Offset or savedExpandedHeight
         mainFrame.Position = UDim2.new(
             mainFrame.Position.X.Scale,
             mainFrame.Position.X.Offset,
@@ -1141,12 +2262,15 @@ local function toggleCollapse()
             savedExpandedHeight = mainFrame.Size.Y.Offset
         end
 
+        mainFrame.ClipsDescendants = true
+        if bg then bg.ClipsDescendants = true end
+        if innerMain then innerMain.ClipsDescendants = true end
+
         if sidebar then sidebar.Visible = false end
         if mainBar then mainBar.Visible = false end
         mainFrame.Visible = true
         if innerMain then innerMain.Visible = true end
 
-        -- ปรับเฉพาะความสูง (Size) โดยไม่แตะต้อง Position เลยแม้แต่น้อย บาร์บนจึงอยู่นิ่งสนิท 100%
         local tween = TweenService:Create(mainFrame, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
             Size = UDim2.new(widthScale, widthOffset, 0, TOPBAR_HEIGHT)
         })
@@ -1156,52 +2280,70 @@ local function toggleCollapse()
         mainFrame.Visible = true
         if innerMain then innerMain.Visible = true end
 
-        local targetHeight = savedExpandedHeight or 440
+        local targetHeight = savedExpandedHeight or defaultHeight
 
-        -- ปรับเฉพาะความสูง (Size) คลี่ลงด้านล่าง โดยบาร์บนอยู่ที่เดิม 100% ไม่ขยับ
+        if sidebar then sidebar.Visible = true end
+        if mainBar then mainBar.Visible = true end
+
+        if Window.TabModule and Window.TabModule.SelectedTab then
+            pcall(function()
+                Window.TabModule:SelectTab(Window.TabModule.SelectedTab)
+            end)
+        end
+
         local tween = TweenService:Create(mainFrame, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
             Size = UDim2.new(widthScale, widthOffset, 0, targetHeight)
         })
         tween:Play()
 
-        task.delay(0.16, function()
+        task.delay(0.25, function()
             if not isCollapsed then
+                mainFrame.ClipsDescendants = false
+                if bg then bg.ClipsDescendants = false end
+                if innerMain then innerMain.ClipsDescendants = false end
                 if sidebar then sidebar.Visible = true end
                 if mainBar then mainBar.Visible = true end
+                if Window.TabModule and Window.TabModule.SelectedTab then
+                    pcall(function()
+                        Window.TabModule:SelectTab(Window.TabModule.SelectedTab)
+                    end)
+                end
             end
+            isToggling = false
         end)
-        task.delay(0.25, function() isToggling = false end)
     end
 end
 
 --==================================================
--- FULL UNLOAD FUNCTION (ทำลาย UI ทั้งหมดอย่างหมดจด 100%)
+-- FULL UNLOAD FUNCTION
 --==================================================
 local function fullUnloadScript()
     Destroyed = true
+    if spectateConn then spectateConn:Disconnect() spectateConn = nil end
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+        workspace.CurrentCamera.CameraSubject = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    end
     if ESPFolder then pcall(function() ESPFolder:Destroy() end) end
-    if RestoreGui then pcall(function() RestoreGui:Destroy() end) end
+    if Restore and Restore.Gui then pcall(function() Restore.Gui:Destroy() end) end
+    if QuickSkills and QuickSkills.Gui then pcall(function() QuickSkills.Gui:Destroy() end) end
     if AntiFlingConn then pcall(function() AntiFlingConn:Disconnect() end) end
-    if isAuraPackEnabled then restoreDefaultAnimationPack() end
+    if isAuraPackEnabled or activeCustomPackId then restoreDefaultAnimationPack() end
     stopFly()
 
-    -- ทำลาย ScreenGui ทั้งหมดของ WindUI
     pcall(function() if WindUI and WindUI.ScreenGui then WindUI.ScreenGui:Destroy() end end)
     pcall(function() if WindUI and WindUI.NotificationGui then WindUI.NotificationGui:Destroy() end end)
     pcall(function() if WindUI and WindUI.DropdownGui then WindUI.DropdownGui:Destroy() end end)
     pcall(function() if WindUI and WindUI.TooltipGui then WindUI.TooltipGui:Destroy() end end)
 
-    -- กวาดล้าง UI ที่หลงเหลือทั้งหมด
     pcall(function()
         for _, obj in ipairs(game.CoreGui:GetChildren()) do
-            if obj.Name == "R1N_MM2_ESP" or obj.Name == "R1N_RESTORE_BAR" or obj.Name:find("WindUI") then
+            if obj.Name == "R1N_LOADER_SCREEN" or obj.Name == "R1N_MM2_ESP" or obj.Name == "R1N_RESTORE_BAR" or obj.Name == "R1N_QUICK_SKILLS" or obj.Name:find("WindUI") then
                 obj:Destroy()
             end
         end
     end)
 end
 
--- Override Window.Close ให้เรียก toggleCollapse สำหรับปุ่มย่อ (—) ของ WindUI
 Window.Close = function(self)
     toggleCollapse()
     local CloseObj = {}
@@ -1211,18 +2353,105 @@ Window.Close = function(self)
     return CloseObj
 end
 
--- Override Window.Destroy สำหรับปุ่ม X ปิดหน้าต่างทันที (ไม่ถามยืนยัน)
-Window.Destroy = function(self)
+--==================================================
+-- SMART SQUARE NEON LOGO BUTTON (EXACT MATCH)
+--==================================================
+local Restore = {}
+Restore.Gui = Instance.new("ScreenGui")
+Restore.Gui.Name = "R1N_RESTORE_BAR"
+Restore.Gui.ResetOnSpawn = false
+Restore.Gui.DisplayOrder = 999999
+Restore.Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+Restore.Gui.AutoLocalize = false
+Restore.Gui.Parent = game.CoreGui
+
+Restore.Btn = Instance.new("ImageButton")
+Restore.Btn.Name = "R1N_SquareLogoButton"
+Restore.Btn.Size = UDim2.fromOffset(46, 46)
+Restore.Btn.Position = UDim2.new(0, 20, 0, 20)
+Restore.Btn.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+Restore.Btn.Active = true
+Restore.Btn.Selectable = true
+Restore.Btn.Visible = false
+Restore.Btn.ZIndex = 999999
+Restore.Btn.AutoLocalize = false
+Restore.Btn.Parent = Restore.Gui
+
+Instance.new("UICorner", Restore.Btn).CornerRadius = UDim.new(0, 10)
+
+Restore.Stroke = Instance.new("UIStroke", Restore.Btn)
+Restore.Stroke.Color = Color3.fromRGB(0, 185, 255)
+Restore.Stroke.Thickness = 1.6
+Restore.Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+Restore.Logo = Instance.new("ImageLabel", Restore.Btn)
+Restore.Logo.Name = "LogoIcon"
+Restore.Logo.Size = UDim2.fromOffset(26, 26)
+Restore.Logo.Position = UDim2.new(0.5, -13, 0.5, -13)
+Restore.Logo.BackgroundTransparency = 1
+Restore.Logo.Image = "rbxassetid://10709790948"
+Restore.Logo.ImageColor3 = Color3.fromRGB(0, 220, 255)
+Restore.Logo.ZIndex = 1000000
+
+Restore.Grad = Instance.new("UIGradient", Restore.Logo)
+Restore.Grad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 160)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 185, 255))
+})
+
+local function openMainUI()
     if Window.UIElements and Window.UIElements.Main then
-        Window.UIElements.Main.Visible = false
-        if MiniRestoreBar then
-            MiniRestoreBar.Text = "💨 R1N Hub (Open)"
-            MRBStroke.Color = Color3.fromRGB(255, 140, 0)
+        TweenService:Create(Restore.Btn, TweenInfo.new(0.12, Enum.EasingStyle.Quart), {
+            Size = UDim2.fromOffset(42, 42)
+        }):Play()
+        task.wait(0.08)
+        Restore.Btn.Size = UDim2.fromOffset(46, 46)
+
+        Window.UIElements.Main.Visible = true
+        Restore.Btn.Visible = false
+        if Window.TabModule and Window.TabModule.SelectedTab then
+            pcall(function()
+                Window.TabModule:SelectTab(Window.TabModule.SelectedTab)
+            end)
         end
     end
 end
 
--- Hook ปุ่ม Topbar (— สำหรับย่อ Garage Door, ✕ สำหรับปิดซ่อน UI ทันที)
+local function closeMainUI()
+    if Window.UIElements and Window.UIElements.Main then
+        Window.UIElements.Main.Visible = false
+        Restore.Btn.Visible = true
+    end
+end
+
+Restore.Btn.MouseButton1Click:Connect(openMainUI)
+
+Restore.isDragging = false
+Restore.dragStart = nil
+Restore.startPos = nil
+Restore.Btn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        Restore.isDragging = true
+        Restore.dragStart = input.Position
+        Restore.startPos = Restore.Btn.Position
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        Restore.isDragging = false
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if Restore.isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - Restore.dragStart
+        Restore.Btn.Position = UDim2.new(Restore.startPos.X.Scale, Restore.startPos.X.Offset + delta.X, Restore.startPos.Y.Scale, Restore.startPos.Y.Offset + delta.Y)
+    end
+end)
+
+Window.Destroy = function(self)
+    closeMainUI()
+end
+
 pcall(function()
     local topbarRight = Window.UIElements.Main.Main.Topbar.Right
     for _, child in ipairs(topbarRight:GetChildren()) do
@@ -1235,13 +2464,7 @@ pcall(function()
                     if imgName:find("minus") or child.LayoutOrder == 997 or child.LayoutOrder == 998 then
                         toggleCollapse()
                     elseif imgName:find("close") or imgName:find("x") or child.LayoutOrder == 1000 or child.LayoutOrder == 999 then
-                        if Window.UIElements and Window.UIElements.Main then
-                            Window.UIElements.Main.Visible = false
-                            if MiniRestoreBar then
-                                MiniRestoreBar.Text = "💨 R1N Hub (Open)"
-                                MRBStroke.Color = Color3.fromRGB(255, 140, 0)
-                            end
-                        end
+                        closeMainUI()
                     end
                 end
             end)
@@ -1249,124 +2472,299 @@ pcall(function()
     end
 end)
 
---==================================================
--- FLOATING TOGGLE BUTTON (ปุ่มลอยเปิด-ปิด UI สมบูรณ์แบบ)
---==================================================
-local RestoreGui = Instance.new("ScreenGui")
-RestoreGui.Name = "R1N_RESTORE_BAR"
-RestoreGui.ResetOnSpawn = false
-RestoreGui.DisplayOrder = 999999
-RestoreGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-RestoreGui.Parent = game.CoreGui
-
-local MiniRestoreBar = Instance.new("TextButton")
-MiniRestoreBar.Size = UDim2.fromOffset(160, 36)
-MiniRestoreBar.Position = UDim2.new(0.5, -80, 0, 12)
-MiniRestoreBar.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
-MiniRestoreBar.Text = "💨 R1N Hub (Close)"
-MiniRestoreBar.TextColor3 = Color3.fromRGB(255, 255, 255)
-MiniRestoreBar.Font = Enum.Font.GothamBold
-MiniRestoreBar.TextSize = 12
-MiniRestoreBar.Active = true
-MiniRestoreBar.Selectable = true
-MiniRestoreBar.ZIndex = 999999
-MiniRestoreBar.Parent = RestoreGui
-Instance.new("UICorner", MiniRestoreBar).CornerRadius = UDim.new(1, 0)
-
-local MRBStroke = Instance.new("UIStroke", MiniRestoreBar)
-MRBStroke.Color = Color3.fromRGB(0, 185, 255)
-MRBStroke.Thickness = 1.5
-
--- Dragging Mini Toggle Button
-local isDragging, dragStart, startPos
-MiniRestoreBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDragging = true
-        dragStart = input.Position
-        startPos = MiniRestoreBar.Position
+UserInputService.InputBegan:Connect(function(input, processed)
+    if not processed and input.KeyCode == Enum.KeyCode.RightShift then
+        if Window.UIElements and Window.UIElements.Main then
+            if Window.UIElements.Main.Visible then
+                closeMainUI()
+            else
+                openMainUI()
+            end
+        end
     end
 end)
+
+--==================================================
+--==================================================
+-- MM2 QUICK ACTION SKILL BUTTONS & HOTKEYS ENGINE
+--==================================================
+local QuickSkills = {}
+QuickSkills.Enabled = true
+
+QuickSkills.Gui = Instance.new("ScreenGui")
+QuickSkills.Gui.Name = "R1N_QUICK_SKILLS"
+QuickSkills.Gui.ResetOnSpawn = false
+QuickSkills.Gui.DisplayOrder = 99999
+QuickSkills.Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+QuickSkills.Gui.AutoLocalize = false
+QuickSkills.Gui.Parent = game.CoreGui
+
+-- Container Frame: Middle-Right (Y = 0.36), safely ABOVE MM2's native Throw, Equip & Jump buttons!
+QuickSkills.Container = Instance.new("Frame")
+QuickSkills.Container.Name = "SkillsContainer"
+QuickSkills.Container.Size = UDim2.fromOffset(68, 162)
+QuickSkills.Container.Position = UDim2.new(1, -78, 0.36, 0)
+QuickSkills.Container.BackgroundTransparency = 1
+QuickSkills.Container.Active = true
+QuickSkills.Container.Visible = false
+QuickSkills.Container.Parent = QuickSkills.Gui
+
+-- Smooth Draggable Container (Touch & Mouse Support)
+QuickSkills.isDragging = false
+QuickSkills.dragStart = nil
+QuickSkills.startPos = nil
+
+QuickSkills.Container.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        QuickSkills.isDragging = true
+        QuickSkills.dragStart = input.Position
+        QuickSkills.startPos = QuickSkills.Container.Position
+    end
+end)
+
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDragging = false
+        QuickSkills.isDragging = false
     end
 end)
+
 UserInputService.InputChanged:Connect(function(input)
-    if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        MiniRestoreBar.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    if QuickSkills.isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - QuickSkills.dragStart
+        QuickSkills.Container.Position = UDim2.new(
+            QuickSkills.startPos.X.Scale,
+            QuickSkills.startPos.X.Offset + delta.X,
+            QuickSkills.startPos.Y.Scale,
+            QuickSkills.startPos.Y.Offset + delta.Y
+        )
     end
 end)
 
--- ฟังก์ชันเปิด/ปิดหน้าต่างทั้งหมด (Full Toggle)
-local isUIOpen = true
-local function ToggleFullUI()
-    local mainFrame = Window.UIElements and Window.UIElements.Main
-    if not mainFrame then return end
+-- Micro-scale click animation
+local function animateQuickButton(btn)
+    if not btn then return end
+    pcall(function()
+        local orig = UDim2.fromOffset(54, 54)
+        local pressed = UDim2.fromOffset(46, 46)
+        TweenService:Create(btn, TweenInfo.new(0.08, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Size = pressed }):Play()
+        task.delay(0.09, function()
+            TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = orig }):Play()
+        end)
+    end)
+end
 
-    isUIOpen = not isUIOpen
-    mainFrame.Visible = isUIOpen
+-- Helper to create MM2 circular skill button
+local function createMM2SkillButton(name, yOffset)
+    local btn = Instance.new("ImageButton")
+    btn.Name = name
+    btn.Size = UDim2.fromOffset(54, 54)
+    btn.Position = UDim2.new(0.5, 0, 0, yOffset)
+    btn.AnchorPoint = Vector2.new(0.5, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+    btn.BackgroundTransparency = 0.22
+    btn.AutoButtonColor = false
+    btn.Active = true
+    btn.Selectable = true
+    btn.AutoLocalize = false
+    btn.Parent = QuickSkills.Container
 
-    if isUIOpen then
-        MiniRestoreBar.Text = "💨 R1N Hub (Close)"
-        MRBStroke.Color = Color3.fromRGB(0, 185, 255)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Name = "BorderStroke"
+    stroke.Thickness = 2.2
+    stroke.Color = Color3.fromRGB(255, 45, 45)
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+    local icon = Instance.new("ImageLabel", btn)
+    icon.Name = "SkillIcon"
+    icon.Size = UDim2.fromOffset(28, 28)
+    icon.Position = UDim2.new(0.5, 0, 0.5, 0)
+    icon.AnchorPoint = Vector2.new(0.5, 0.5)
+    icon.BackgroundTransparency = 1
+    icon.Image = "rbxassetid://10723415766"
+    icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+    icon.AutoLocalize = false
+
+    local badge = Instance.new("TextLabel", btn)
+    badge.Name = "KeyBadge"
+    badge.Size = UDim2.new(2, 0, 0, 16)
+    badge.Position = UDim2.new(0.5, 0, 1, 3)
+    badge.AnchorPoint = Vector2.new(0.5, 0)
+    badge.BackgroundTransparency = 1
+    badge.Font = Enum.Font.GothamBold
+    badge.TextSize = 11
+    badge.TextColor3 = Color3.fromRGB(255, 255, 255)
+    badge.TextStrokeTransparency = 0
+    badge.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    badge.AutoLocalize = false
+
+    return btn, stroke, icon, badge
+end
+
+QuickSkills.Btn1, QuickSkills.Stroke1, QuickSkills.Icon1, QuickSkills.Badge1 = createMM2SkillButton("SkillBtn1", 0)
+QuickSkills.Btn2, QuickSkills.Stroke2, QuickSkills.Icon2, QuickSkills.Badge2 = createMM2SkillButton("SkillBtn2", 78)
+
+local function updateQuickSkillButtons(role)
+    if not QuickSkills.Enabled or Destroyed then
+        QuickSkills.Container.Visible = false
+        return
+    end
+
+    local myRole = role or getRole(LocalPlayer)
+
+    if myRole == "Murderer" then
+        QuickSkills.Container.Visible = true
+
+        -- Skill 1: Knife Throw / Aim Throw [Q]
+        QuickSkills.Stroke1.Color = Color3.fromRGB(255, 45, 45)
+        QuickSkills.Icon1.Image = "rbxassetid://10723415766"
+        QuickSkills.Icon1.ImageColor3 = Color3.fromRGB(255, 90, 90)
+        QuickSkills.Badge1.Text = (currentLang == "TH" and "ปามีด [Q]" or "Aim Throw [Q]")
+
+        -- Skill 2: Kill All [E]
+        QuickSkills.Stroke2.Color = Color3.fromRGB(255, 45, 45)
+        QuickSkills.Icon2.Image = "rbxassetid://10747372992"
+        QuickSkills.Icon2.ImageColor3 = Color3.fromRGB(255, 90, 90)
+        QuickSkills.Badge2.Text = (currentLang == "TH" and "ฟันหมด [E]" or "Kill All [E]")
+
+    elseif myRole == "Sheriff" or myRole == "Hero" then
+        QuickSkills.Container.Visible = true
+        local isHero = (myRole == "Hero")
+        local mainColor = isHero and Color3.fromRGB(255, 225, 50) or Color3.fromRGB(0, 185, 255)
+
+        -- Skill 1: TP Shoot [Q]
+        QuickSkills.Stroke1.Color = mainColor
+        QuickSkills.Icon1.Image = "rbxassetid://10734950309"
+        QuickSkills.Icon1.ImageColor3 = mainColor
+        QuickSkills.Badge1.Text = (currentLang == "TH" and "วาร์ปยิง [Q]" or "TP Shoot [Q]")
+
+        -- Skill 2: Aim Shoot [E]
+        QuickSkills.Stroke2.Color = mainColor
+        QuickSkills.Icon2.Image = "rbxassetid://10709790948"
+        QuickSkills.Icon2.ImageColor3 = mainColor
+        QuickSkills.Badge2.Text = (currentLang == "TH" and "ล็อคยิง [E]" or "Aim Shoot [E]")
     else
-        MiniRestoreBar.Text = "💨 R1N Hub (Open)"
-        MRBStroke.Color = Color3.fromRGB(255, 140, 0)
+        QuickSkills.Container.Visible = false
     end
 end
 
-MiniRestoreBar.MouseButton1Click:Connect(ToggleFullUI)
-
--- คีย์ลัด Right-Shift
-UserInputService.InputBegan:Connect(function(input, processed)
-    if not processed and input.KeyCode == Enum.KeyCode.RightShift then
-        ToggleFullUI()
+-- Button Clicks
+QuickSkills.Btn1.MouseButton1Click:Connect(function()
+    animateQuickButton(QuickSkills.Btn1)
+    local myRole = getRole(LocalPlayer)
+    if myRole == "Murderer" then
+        executeKnifeThrowNearest()
+    elseif myRole == "Sheriff" or myRole == "Hero" then
+        executeShoot(true)
     end
 end)
 
+QuickSkills.Btn2.MouseButton1Click:Connect(function()
+    animateQuickButton(QuickSkills.Btn2)
+    local myRole = getRole(LocalPlayer)
+    if myRole == "Murderer" then
+        killAllKnife()
+    elseif myRole == "Sheriff" or myRole == "Hero" then
+        executeShoot(false)
+    end
+end)
+
+-- PC Keyboard Hotkeys [Q] and [E]
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed or not QuickSkills.Enabled or Destroyed then return end
+    
+    local myRole = getRole(LocalPlayer)
+    if input.KeyCode == Enum.KeyCode.Q then
+        if myRole == "Murderer" then
+            animateQuickButton(QuickSkills.Btn1)
+            executeKnifeThrowNearest()
+        elseif myRole == "Sheriff" or myRole == "Hero" then
+            animateQuickButton(QuickSkills.Btn1)
+            executeShoot(true)
+        end
+    elseif input.KeyCode == Enum.KeyCode.E then
+        if myRole == "Murderer" then
+            animateQuickButton(QuickSkills.Btn2)
+            killAllKnife()
+        elseif myRole == "Sheriff" or myRole == "Hero" then
+            animateQuickButton(QuickSkills.Btn2)
+            executeShoot(false)
+        end
+    end
+end)
+
+-- 1. TAB: MAIN (HARDLOCKED ENGLISH TAB TITLE)
 --==================================================
--- 1. TAB: MAIN / INFO
---==================================================
-local TabMain = Window:Tab({
+TabMain = Window:Tab({
     Title = "Main",
     Icon = "solar:home-2-bold",
 })
 
-TabMain:Section({ Title = "R1N Hub Information" })
-TabMain:Paragraph({
-    Title = "Welcome to R1N MM2 Hub!",
-    Desc = "Advanced & modern script hub powered by WindUI. Check your live role in the top header. Press [—] to collapse the window downwards.",
+UI.secMainInfo = TabMain:Section({ Title = TRANSLATIONS[currentLang].Main.SecInfo })
+UI.paraMain = TabMain:Paragraph({
+    Title = TRANSLATIONS[currentLang].Main.WelcomeTitle,
+    Desc = TRANSLATIONS[currentLang].Main.WelcomeDesc,
 })
 
-TabMain:Button({
-    Title = "Reload UI",
-    Icon = "solar:refresh-bold",
+-- DISCORD COMMUNITY SECTION
+UI.secDiscord = TabMain:Section({ Title = TRANSLATIONS[currentLang].Main.SecDiscord })
+UI.paraDiscord = TabMain:Paragraph({
+    Title = TRANSLATIONS[currentLang].Main.DiscordTitle,
+    Desc = TRANSLATIONS[currentLang].Main.DiscordDesc,
+})
+UI.btnCopyDiscord = TabMain:Button({
+    Title = TRANSLATIONS[currentLang].Main.CopyDiscord,
+    Desc = TRANSLATIONS[currentLang].Main.CopyDiscordDesc,
+    Icon = "solar:link-round-bold",
     Callback = function()
-        WindUI:Notify({ Title = "System", Content = "Reloading UI...", Icon = "refresh-cw" })
+        safeSetClipboard(DISCORD_INVITE_URL)
+        WindUI:Notify({
+            Title = "Discord",
+            Content = TRANSLATIONS[currentLang].Main.CopiedNotify,
+            Icon = "check-circle"
+        })
     end,
 })
 
-TabMain:Button({
-    Title = "Rejoin Place",
+UI.btnReload = TabMain:Button({
+    Title = TRANSLATIONS[currentLang].Main.Reload,
+    Desc = TRANSLATIONS[currentLang].Main.ReloadDesc,
+    Icon = "solar:refresh-bold",
+    Callback = function()
+        WindUI:Notify({ Title = "System", Content = (currentLang == "TH" and "กำลังรีโหลดหน้าต่าง UI..." or "Reloading UI..."), Icon = "refresh-cw" })
+    end,
+})
+
+UI.btnRejoin = TabMain:Button({
+    Title = TRANSLATIONS[currentLang].Main.Rejoin,
+    Desc = TRANSLATIONS[currentLang].Main.RejoinDesc,
     Icon = "solar:logout-2-bold",
     Callback = function()
         TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
     end,
 })
 
+-- SERVER HOP (RECOMMENDED CLOSEST SERVER / BEST PING)
+UI.btnServerHop = TabMain:Button({
+    Title = TRANSLATIONS[currentLang].Main.ServerHop,
+    Desc = TRANSLATIONS[currentLang].Main.ServerHopDesc,
+    Icon = "solar:compass-bold",
+    Callback = serverHopClosest,
+})
+
 --==================================================
--- 2. TAB: ESP
+-- 2. TAB: ESP (HARDLOCKED ENGLISH TAB TITLE)
 --==================================================
-local TabESP = Window:Tab({
+TabESP = Window:Tab({
     Title = "ESP",
     Icon = "solar:eye-bold",
 })
 
-TabESP:Section({ Title = "Visuals (ESP)" })
-TabESP:Toggle({
-    Title = "Player & Gun ESP",
-    Desc = "Ultra vibrant colors: Murderer (Red), Sheriff (Blue), Hero (Yellow), Gun Drop",
+UI.secESPVisuals = TabESP:Section({ Title = TRANSLATIONS[currentLang].ESP.SecVisuals })
+UI.togESP = TabESP:Toggle({
+    Title = TRANSLATIONS[currentLang].ESP.PlayerGunESP,
+    Desc = TRANSLATIONS[currentLang].ESP.PlayerGunDesc,
     Value = true,
     Callback = function(val)
         ESPEnabled = val
@@ -1375,74 +2773,74 @@ TabESP:Toggle({
 })
 
 --==================================================
--- 3. TAB: COMBAT
+-- 3. TAB: COMBAT (HARDLOCKED ENGLISH TAB TITLE)
 --==================================================
-local TabCombat = Window:Tab({
+TabCombat = Window:Tab({
     Title = "Combat",
     Icon = "solar:target-bold",
 })
 
-TabCombat:Section({ Title = "Sheriff / Hero Actions" })
-TabCombat:Button({
-    Title = "TP Shoot Murderer",
-    Desc = "Instantly teleports above Murderer and shoots with 100% accuracy",
+UI.secSheriff = TabCombat:Section({ Title = TRANSLATIONS[currentLang].Combat.SecSheriff })
+UI.btnTPShoot = TabCombat:Button({
+    Title = TRANSLATIONS[currentLang].Combat.TPShoot,
+    Desc = TRANSLATIONS[currentLang].Combat.TPShootDesc,
     Callback = function() executeShoot(true) end,
 })
-TabCombat:Button({
-    Title = "Aim Lock Murderer",
-    Desc = "Shoots Murderer from your current position with velocity prediction",
+UI.btnAimShoot = TabCombat:Button({
+    Title = TRANSLATIONS[currentLang].Combat.AimShoot,
+    Desc = TRANSLATIONS[currentLang].Combat.AimShootDesc,
     Callback = function() executeShoot(false) end,
 })
 
-TabCombat:Section({ Title = "Murderer Actions" })
-TabCombat:Button({
-    Title = "Aim Lock Knife Throw",
-    Desc = "Throws knife at the nearest alive player with prediction",
+UI.secMurderer = TabCombat:Section({ Title = TRANSLATIONS[currentLang].Combat.SecMurderer })
+UI.btnKnifeThrow = TabCombat:Button({
+    Title = TRANSLATIONS[currentLang].Combat.KnifeThrow,
+    Desc = TRANSLATIONS[currentLang].Combat.KnifeThrowDesc,
     Callback = executeKnifeThrowNearest,
 })
-TabCombat:Button({
-    Title = "Kill All (Knife)",
-    Desc = "Instantly touches everyone with Knife hitbox",
+UI.btnKillAll = TabCombat:Button({
+    Title = TRANSLATIONS[currentLang].Combat.KillAll,
+    Desc = TRANSLATIONS[currentLang].Combat.KillAllDesc,
     Callback = killAllKnife,
 })
 
-TabCombat:Section({ Title = "Fling Controls" })
-TabCombat:Button({
-    Title = "Fling Murderer",
+UI.secFling = TabCombat:Section({ Title = TRANSLATIONS[currentLang].Combat.SecFling })
+UI.btnFlingMurd = TabCombat:Button({
+    Title = TRANSLATIONS[currentLang].Combat.FlingMurd,
     Callback = function()
         local m = findRole("Murderer")
-        if m then SkidFling(m) else WindUI:Notify({ Title = "Fling", Content = "No Murderer found!", Icon = "alert-circle" }) end
+        if m then SkidFling(m) else WindUI:Notify({ Title = "Fling", Content = (currentLang == "TH" and "ไม่พบฆาตกร!" or "No Murderer found!"), Icon = "alert-circle" }) end
     end,
 })
-TabCombat:Button({
-    Title = "Fling Sheriff / Hero",
+UI.btnFlingSher = TabCombat:Button({
+    Title = TRANSLATIONS[currentLang].Combat.FlingSher,
     Callback = function()
         local s = findRole("Sheriff") or findRole("Hero")
-        if s then SkidFling(s) else WindUI:Notify({ Title = "Fling", Content = "No Sheriff/Hero found!", Icon = "alert-circle" }) end
+        if s then SkidFling(s) else WindUI:Notify({ Title = "Fling", Content = (currentLang == "TH" and "ไม่พบมือปืนหรือฮีโร่!" or "No Sheriff/Hero found!"), Icon = "alert-circle" }) end
     end,
 })
 
-TabCombat:Section({ Title = "Gun Drop Actions" })
-TabCombat:Button({
-    Title = "Teleport to Gun Drop",
+UI.secGunDrop = TabCombat:Section({ Title = TRANSLATIONS[currentLang].Combat.SecGun })
+UI.btnTPGun = TabCombat:Button({
+    Title = TRANSLATIONS[currentLang].Combat.TPGun,
     Callback = function()
         local r = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         local gd = workspace:FindFirstChild("GunDrop", true)
         if r and gd and gd:IsA("BasePart") then
             r.CFrame = gd.CFrame * CFrame.new(0, 1, 0)
-            WindUI:Notify({ Title = "Gun", Content = "Teleported to Gun Drop!", Icon = "map-pin" })
+            WindUI:Notify({ Title = "Gun", Content = (currentLang == "TH" and "วาร์ปไปที่ปืนตกสำเร็จ!" or "Teleported to Gun Drop!"), Icon = "map-pin" })
         else
-            WindUI:Notify({ Title = "Gun", Content = "No Gun dropped on map!", Icon = "alert-circle" })
+            WindUI:Notify({ Title = "Gun", Content = (currentLang == "TH" and "ไม่มีปืนตกในแมพ!" or "No Gun dropped on map!"), Icon = "alert-circle" })
         end
     end,
 })
-TabCombat:Button({
-    Title = "Get Gun (Instant Pickup)",
+UI.btnGetGun = TabCombat:Button({
+    Title = TRANSLATIONS[currentLang].Combat.GetGun,
     Callback = function() instantGrabGun(nil, true) end,
 })
-TabCombat:Toggle({
-    Title = "Auto Get Gun Loop (0ms Instant)",
-    Desc = "Event-driven + Heartbeat: Grabs dropped gun in 0ms before any other players",
+UI.togAutoGun = TabCombat:Toggle({
+    Title = TRANSLATIONS[currentLang].Combat.AutoGun,
+    Desc = TRANSLATIONS[currentLang].Combat.AutoGunDesc,
     Value = false,
     Callback = function(val)
         AutoGetGunEnabled = val
@@ -1451,148 +2849,250 @@ TabCombat:Toggle({
         end
         WindUI:Notify({
             Title = "Auto Gun",
-            Content = val and "Auto Get Gun 0ms Enabled!" or "Auto Get Gun Disabled!",
+            Content = val and (currentLang == "TH" and "เปิดระบบออโต้เก็บปืนเรียบร้อย!" or "Auto Get Gun Enabled!") or (currentLang == "TH" and "ปิดระบบออโต้เก็บปืนแล้ว!" or "Auto Get Gun Disabled!"),
             Icon = val and "check-circle" or "x-circle"
         })
     end,
 })
 
+UI.secQuickSkills = TabCombat:Section({ Title = TRANSLATIONS[currentLang].Combat.SecQuickSkills })
+UI.togQuickSkills = TabCombat:Toggle({
+    Title = TRANSLATIONS[currentLang].Combat.TogQuickSkills,
+    Desc = TRANSLATIONS[currentLang].Combat.TogQuickSkillsDesc,
+    Value = true,
+    Callback = function(val)
+        QuickSkills.Enabled = val
+        updateQuickSkillButtons()
+    end,
+})
+
 --==================================================
--- 4. TAB: PLAYER
+-- 4. TAB: PLAYER (HARDLOCKED ENGLISH TAB TITLE)
 --==================================================
-local TabPlayer = Window:Tab({
+TabPlayer = Window:Tab({
     Title = "Player",
     Icon = "solar:user-bold",
 })
 
-TabPlayer:Section({ Title = "Defense & Movement" })
-TabPlayer:Toggle({
-    Title = "Anti-Fling",
-    Desc = "Triple-layer defense: Ghost Collision Filter + Velocity Limiter + Anti-Ragdoll",
+-- 1. Defense & Movement (LayoutOrder: 1 - 5)
+UI.secDef = TabPlayer:Section({ Title = TRANSLATIONS[currentLang].Player.SecDef })
+UI.togAF = TabPlayer:Toggle({
+    Title = TRANSLATIONS[currentLang].Player.AntiFling,
+    Desc = TRANSLATIONS[currentLang].Player.AntiFlingDesc,
     Value = false,
     Callback = toggleAntiFling,
 })
-TabPlayer:Toggle({
-    Title = "Noclip",
-    Desc = "Walk through all walls and obstacles",
+UI.togNC = TabPlayer:Toggle({
+    Title = TRANSLATIONS[currentLang].Player.Noclip,
+    Desc = TRANSLATIONS[currentLang].Player.NoclipDesc,
     Value = false,
     Callback = toggleNoclip,
 })
-TabPlayer:Toggle({
-    Title = "Fly (Cross-Platform)",
-    Desc = "Fly smoothly using movement joystick or WASD + Space/Ctrl",
+UI.togFly = TabPlayer:Toggle({
+    Title = TRANSLATIONS[currentLang].Player.Fly,
+    Desc = TRANSLATIONS[currentLang].Player.FlyDesc,
     Value = false,
     Callback = function(val)
         FlyEnabled = val
         if not FlyEnabled then stopFly() end
     end,
 })
-TabPlayer:Toggle({
-    Title = "Speed Boost",
-    Desc = "Increases walkspeed to 25 studs/s",
+UI.togSpeed = TabPlayer:Toggle({
+    Title = TRANSLATIONS[currentLang].Player.Speed,
+    Desc = TRANSLATIONS[currentLang].Player.SpeedDesc,
     Value = false,
     Callback = function(val) SpeedEnabled = val end,
 })
 
-TabPlayer:Section({ Title = "Dropkick Fling System (R15)" })
-TabPlayer:Button({
-    Title = "Dropkick Fling (1-Shot)",
-    Desc = "Plays real Dropkick Animation and pulses 1,000,000 velocity on Left Leg with Auto-Noclip",
+setElementLayoutOrder(UI.secDef, 1)
+setElementLayoutOrder(UI.togAF, 2)
+setElementLayoutOrder(UI.togNC, 3)
+setElementLayoutOrder(UI.togFly, 4)
+setElementLayoutOrder(UI.togSpeed, 5)
+
+-- 2. Dropkick Fling System (LayoutOrder: 10 - 11)
+UI.secDK = TabPlayer:Section({ Title = TRANSLATIONS[currentLang].Player.SecDK })
+UI.btnDK = TabPlayer:Button({
+    Title = TRANSLATIONS[currentLang].Player.Dropkick,
+    Desc = TRANSLATIONS[currentLang].Player.DropkickDesc,
     Callback = executeDropkickFling,
 })
+setElementLayoutOrder(UI.secDK, 10)
+setElementLayoutOrder(UI.btnDK, 11)
 
-TabPlayer:Section({ Title = "Animation Packs (R15)" })
-TabPlayer:Button({
-    Title = "Adidas Aura Pack",
-    Desc = "Toggle Adidas Aura Pack - Click again to restore default animations",
+-- 3. Animation Packs (LayoutOrder: 20 - 29)
+UI.secPack = TabPlayer:Section({ Title = TRANSLATIONS[currentLang].Player.SecPack })
+UI.btnAuraPack = TabPlayer:Button({
+    Title = TRANSLATIONS[currentLang].Player.AuraPack,
+    Desc = TRANSLATIONS[currentLang].Player.AuraPackDesc,
     Callback = function()
         isAuraPackEnabled = not isAuraPackEnabled
         if isAuraPackEnabled then
+            activeCustomPackId = nil
             applyAuraAnimationPack()
-            WindUI:Notify({ Title = "Animation Pack", Content = "Applied Adidas Aura Pack!", Icon = "sparkles" })
+            WindUI:Notify({ Title = "Animation Pack", Content = (currentLang == "TH" and "เปิดใช้งานชุดท่าทาง Adidas Aura Pack สำเร็จ!" or "Applied Adidas Aura Pack!"), Icon = "sparkles" })
         else
             restoreDefaultAnimationPack()
-            WindUI:Notify({ Title = "Animation Pack", Content = "Restored Default Animations!", Icon = "rotate-ccw" })
+            WindUI:Notify({ Title = "Animation Pack", Content = (currentLang == "TH" and "คืนค่าชุดท่าทางเริ่มต้นเรียบร้อย!" or "Restored Default Animations!"), Icon = "rotate-ccw" })
         end
     end,
 })
+setElementLayoutOrder(UI.secPack, 20)
+setElementLayoutOrder(UI.btnAuraPack, 21)
 
-TabPlayer:Section({ Title = "Emotes (R15) - Click to Play / Click Again to Stop" })
-TabPlayer:Button({ Title = "Animatronic Rage ", Callback = function() playEmote("70714089777566") end })
-TabPlayer:Button({ Title = "Floating in Love", Callback = function() playEmote("97164262994588") end })
-TabPlayer:Button({ Title = "Jamal Groove", Callback = function() playEmote("104131847054135") end })
-TabPlayer:Button({ Title = "Pumpkin King", Callback = function() playEmote("105381637724646") end })
-TabPlayer:Button({ Title = "Slow Aura Run", Callback = function() playEmote("104785408689451") end })
-TabPlayer:Button({ Title = "Giant Pooping Sniff", Callback = function() playEmote("120227342448491") end })
+-- 4. Emotes (R15) (LayoutOrder: 30 - 400)
+UI.secEmote = TabPlayer:Section({ Title = TRANSLATIONS[currentLang].Player.SecEmote })
+setElementLayoutOrder(UI.secEmote, 30)
 
-TabPlayer:Section({ Title = "Weapon Skins (Client-Side)" })
-TabPlayer:Button({ Title = "Venom Knife", Callback = function() changeSkin("Knife", "121944778", "121944781") end })
-TabPlayer:Button({ Title = "Gold Revolver", Callback = function() changeSkin("Gun", "435454659", "435454790") end })
-TabPlayer:Toggle({
-    Title = "Chroma Glow Weapon",
-    Desc = "Cycles weapon color with glowing rainbow hue",
-    Value = false,
-    Callback = function(val) ChromaEnabled = val end,
-})
+UI.bDefault = TabPlayer:Button({ Title = TRANSLATIONS[currentLang].Player.DefaultDance, Callback = function() playEmote("507771019") end })
+UI.bFloat = TabPlayer:Button({ Title = TRANSLATIONS[currentLang].Player.FloatingInLove, Callback = function() playEmote("97164262994588") end })
+UI.bJamal = TabPlayer:Button({ Title = TRANSLATIONS[currentLang].Player.JamalGroove, Callback = function() playEmote("104131847054135") end })
+UI.bPump = TabPlayer:Button({ Title = TRANSLATIONS[currentLang].Player.PumpkinKing, Callback = function() playEmote("105381637724646") end })
+UI.bSlow = TabPlayer:Button({ Title = TRANSLATIONS[currentLang].Player.SlowAuraRun, Callback = function() playEmote("104785408689451") end })
+UI.bPoop = TabPlayer:Button({ Title = TRANSLATIONS[currentLang].Player.PoopingSniff, Callback = function() playEmote("120227342448491") end })
+
+setElementLayoutOrder(UI.bDefault, 31)
+setElementLayoutOrder(UI.bFloat, 32)
+setElementLayoutOrder(UI.bJamal, 33)
+setElementLayoutOrder(UI.bPump, 34)
+setElementLayoutOrder(UI.bSlow, 35)
+setElementLayoutOrder(UI.bPoop, 36)
+
+local function renderCustomItemButton(entry, index)
+    local btn = TabPlayer:Button({
+        Title = entry.Name .. (entry.IsPack and " 📦 [Pack]" or ""),
+        Callback = function()
+            if entry.IsPack and entry.PackMap then
+                if activeCustomPackId == tostring(entry.Id) then
+                    activeCustomPackId = nil
+                    isAuraPackEnabled = false
+                    restoreDefaultAnimationPack()
+                    WindUI:Notify({ Title = "Animation Pack", Content = (currentLang == "TH" and "คืนค่าชุดท่าทางเริ่มต้นเรียบร้อย!" or "Restored Default Animations!"), Icon = "rotate-ccw" })
+                else
+                    activeCustomPackId = tostring(entry.Id)
+                    isAuraPackEnabled = false
+                    applyCustomAnimationPack(entry.PackMap)
+                    WindUI:Notify({ Title = "Animation Pack", Content = (currentLang == "TH" and ("เปิดใช้งานชุดท่าทาง '" .. entry.Name .. "' สำเร็จ!") or ("Applied '" .. entry.Name .. "' Pack!")), Icon = "sparkles" })
+                end
+            else
+                playEmote(entry.Id)
+            end
+        end,
+    })
+    customEmoteButtons[tostring(entry.Id)] = btn
+    
+    if entry.IsPack then
+        setElementLayoutOrder(btn, 21 + (index or #customEmotes))
+    else
+        setElementLayoutOrder(btn, 40 + (index or #customEmotes))
+    end
+    return btn
+end
+
+local function reorderAllCustomItemButtons()
+    local packCount = 0
+    local emoteCount = 0
+    if type(customEmotes) == "table" then
+        for _, entry in ipairs(customEmotes) do
+            local btn = customEmoteButtons[tostring(entry.Id)]
+            if btn then
+                if entry.IsPack then
+                    packCount = packCount + 1
+                    setElementLayoutOrder(btn, 21 + packCount)
+                else
+                    emoteCount = emoteCount + 1
+                    setElementLayoutOrder(btn, 40 + emoteCount)
+                end
+            end
+        end
+    end
+end
+
+if type(customEmotes) == "table" then
+    for idx, entry in ipairs(customEmotes) do
+        renderCustomItemButton(entry, idx)
+    end
+end
 
 --==================================================
--- 5. TAB: TELEPORTS (FIXED DROPDOWN REFRESH)
+-- 5. TAB: TELEPORTS (HARDLOCKED ENGLISH TAB TITLE)
 --==================================================
-local TabTP = Window:Tab({
+TabTP = Window:Tab({
     Title = "Teleports",
     Icon = "solar:map-point-bold",
 })
 
-TabTP:Section({ Title = "Locations" })
-TabTP:Button({ Title = "Teleport to Lobby", Callback = tpToLobby })
-TabTP:Button({ Title = "Teleport to Current Map", Callback = tpToMap })
+UI.secLoc = TabTP:Section({ Title = TRANSLATIONS[currentLang].Teleports.SecLoc })
+UI.btnTPLobby = TabTP:Button({ Title = TRANSLATIONS[currentLang].Teleports.TPLobby, Callback = tpToLobby })
+UI.btnTPMap = TabTP:Button({ Title = TRANSLATIONS[currentLang].Teleports.TPMap, Callback = tpToMap })
 
-TabTP:Section({ Title = "Target Player Teleport & Fling" })
+UI.secTargetTP = TabTP:Section({ Title = TRANSLATIONS[currentLang].Teleports.SecTarget })
 
-local function getPlayerNames()
-    local names = {}
+local function getFormattedPlayerList()
+    local formattedList = {}
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then table.insert(names, p.Name) end
+        if p ~= LocalPlayer then
+            local role = getRole(p)
+            local roleEmoji = "🛡️"
+            if role == "Murderer" then roleEmoji = "🔪"
+            elseif role == "Sheriff" then roleEmoji = "🔫"
+            elseif role == "Hero" then roleEmoji = "⭐"
+            elseif role == "Dead" then roleEmoji = "💀" end
+
+            local displayTag = string.format("%s %s", roleEmoji, p.DisplayName)
+            table.insert(formattedList, displayTag)
+        end
     end
-    return names
+    return formattedList
 end
 
-local TargetDropdown = TabTP:Dropdown({
-    Title = "Select Player Target",
-    Values = getPlayerNames(),
+local function parseTargetPlayerName(selectedStr)
+    if not selectedStr then return nil end
+    local clean = selectedStr:gsub("^%S+%s*", ""):match("^%s*(.-)%s*$")
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.DisplayName == clean or p.Name == clean or selectedStr:find(p.Name, 1, true) or selectedStr:find(p.DisplayName, 1, true) then
+            return p.Name
+        end
+    end
+    return clean
+end
+
+UI.TargetDropdown = TabTP:Dropdown({
+    Title = TRANSLATIONS[currentLang].Teleports.SelectTarget,
+    Values = getFormattedPlayerList(),
     Callback = function(selected)
-        TargetPlayerName = selected
+        TargetPlayerName = parseTargetPlayerName(selected)
+        if isSpectating then
+            toggleViewTargetPlayer(true)
+        end
     end,
 })
 
--- ฟังก์ชันรีเฟรชรายชื่อใน Dropdown ให้ทำงาน 100%
 local function refreshPlayerDropdown()
-    local updatedNames = getPlayerNames()
+    local updatedList = getFormattedPlayerList()
     pcall(function()
-        if TargetDropdown then
-            if TargetDropdown.Refresh then
-                TargetDropdown:Refresh(updatedNames)
+        if UI.TargetDropdown then
+            if UI.TargetDropdown.Refresh then
+                UI.TargetDropdown:Refresh(updatedList)
             end
-            if TargetDropdown.DropdownMenu and TargetDropdown.DropdownMenu.Refresh then
-                TargetDropdown.DropdownMenu:Refresh(updatedNames)
+            if UI.TargetDropdown.DropdownMenu and UI.TargetDropdown.DropdownMenu.Refresh then
+                UI.TargetDropdown.DropdownMenu:Refresh(updatedList)
             end
         end
     end)
 end
 
--- Auto-Refresh เมื่อมีคนเข้า/ออกจากเกม
-Players.PlayerAdded:Connect(function()
+Players.PlayerAdded:Connect(function() task.wait(0.5) refreshPlayerDropdown() end)
+Players.PlayerRemoving:Connect(function(p)
     task.wait(0.5)
     refreshPlayerDropdown()
+    if isSpectating and TargetPlayerName == p.Name then
+        toggleViewTargetPlayer(false)
+    end
 end)
 
-Players.PlayerRemoving:Connect(function()
-    task.wait(0.5)
-    refreshPlayerDropdown()
-end)
-
-TabTP:Button({
-    Title = "Teleport to Target",
+UI.btnTPTarget = TabTP:Button({
+    Title = TRANSLATIONS[currentLang].Teleports.TPTarget,
     Callback = function()
         if TargetPlayerName then
             local p = Players:FindFirstChild(TargetPlayerName)
@@ -1600,46 +3100,207 @@ TabTP:Button({
                 local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if myRoot then
                     myRoot.CFrame = p.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
-                    WindUI:Notify({ Title = "Teleport", Content = "Teleported to " .. p.DisplayName, Icon = "map-pin" })
+                    WindUI:Notify({ Title = "Teleport", Content = (currentLang == "TH" and ("วาร์ปไปหา " .. p.DisplayName .. " สำเร็จ!") or ("Teleported to " .. p.DisplayName)), Icon = "map-pin" })
                 end
             end
         else
-            WindUI:Notify({ Title = "Teleport", Content = "Please select a target first!", Icon = "alert-circle" })
+            WindUI:Notify({ Title = "Teleport", Content = (currentLang == "TH" and "กรุณาเลือกผู้เล่นเป้าหมายก่อน!" or "Please select a target first!"), Icon = "alert-circle" })
         end
     end,
 })
 
-TabTP:Button({
-    Title = "Fling Target",
+UI.btnFlingTarget = TabTP:Button({
+    Title = TRANSLATIONS[currentLang].Teleports.FlingTarget,
     Callback = function()
         if TargetPlayerName then
             local p = Players:FindFirstChild(TargetPlayerName)
             if p then SkidFling(p) end
         else
-            WindUI:Notify({ Title = "Fling", Content = "Please select a target first!", Icon = "alert-circle" })
+            WindUI:Notify({ Title = "Fling", Content = (currentLang == "TH" and "กรุณาเลือกผู้เล่นเป้าหมายก่อน!" or "Please select a target first!"), Icon = "alert-circle" })
         end
     end,
 })
 
-TabTP:Button({
-    Title = "Refresh Player List",
+-- VIEW / SPECTATE TARGET PLAYER TOGGLE
+UI.togViewTarget = TabTP:Toggle({
+    Title = TRANSLATIONS[currentLang].Teleports.ViewTarget,
+    Desc = TRANSLATIONS[currentLang].Teleports.ViewTargetDesc,
+    Value = false,
+    Callback = toggleViewTargetPlayer,
+})
+
+UI.btnRefreshTarget = TabTP:Button({
+    Title = TRANSLATIONS[currentLang].Teleports.RefreshTarget,
     Callback = function()
         refreshPlayerDropdown()
-        WindUI:Notify({ Title = "Player List", Content = "Refreshed Player Dropdown!", Icon = "refresh-cw" })
+        WindUI:Notify({ Title = "Player List", Content = (currentLang == "TH" and "รีเฟรชรายชื่อผู้เล่นเรียบร้อย!" or "Refreshed Player Dropdown!"), Icon = "refresh-cw" })
     end,
 })
 
 --==================================================
--- 6. TAB: SETTINGS & THEMES
+-- 6. TAB: SETTINGS (HARDLOCKED ENGLISH TAB TITLE)
 --==================================================
-local TabSettings = Window:Tab({
+TabSettings = Window:Tab({
     Title = "Settings",
     Icon = "solar:settings-bold",
 })
 
-TabSettings:Section({ Title = "UI Customization" })
-TabSettings:Dropdown({
-    Title = "Select UI Theme",
+UI.secEmoteMgr = TabSettings:Section({ Title = TRANSLATIONS[currentLang].Settings.SecEmotesMgr })
+
+local inputEmoteId = ""
+local selectedDeleteEmoteName = nil
+
+local function getCustomEmoteNames()
+    local names = {}
+    if type(customEmotes) == "table" then
+        for _, e in ipairs(customEmotes) do
+            table.insert(names, e.Name)
+        end
+    end
+    if #names == 0 then table.insert(names, (currentLang == "EN" and "None" or "None")) end
+    return names
+end
+
+UI.inpIdObj = TabSettings:Input({
+    Title = TRANSLATIONS[currentLang].Settings.EmoteId,
+    Placeholder = TRANSLATIONS[currentLang].Settings.EmoteIdPh,
+    Callback = function(val)
+        inputEmoteId = val
+    end,
+})
+
+local function refreshDeleteEmoteDropdown()
+    pcall(function()
+        local names = getCustomEmoteNames()
+        if UI.DeleteEmoteDropdown then
+            if UI.DeleteEmoteDropdown.Refresh then UI.DeleteEmoteDropdown:Refresh(names) end
+            if UI.DeleteEmoteDropdown.DropdownMenu and UI.DeleteEmoteDropdown.DropdownMenu.Refresh then
+                UI.DeleteEmoteDropdown.DropdownMenu:Refresh(names)
+            end
+        end
+    end)
+end
+
+UI.btnAddEmote = TabSettings:Button({
+    Title = TRANSLATIONS[currentLang].Settings.AddEmote,
+    Desc = TRANSLATIONS[currentLang].Settings.AddEmoteDesc,
+    Icon = "solar:add-circle-bold",
+    Callback = function()
+        local cleanId = tostring(inputEmoteId):match("(%d+)")
+        if not cleanId or cleanId == "" then
+            WindUI:Notify({ Title = "Emote Manager", Content = (currentLang == "TH" and "กรุณาใส่วาง Asset ID หรือ ลิงก์ที่ถูกต้อง!" or "Please enter a valid Asset ID or URL!"), Icon = "alert-triangle" })
+            return
+        end
+
+        if type(customEmotes) == "table" then
+            for _, e in ipairs(customEmotes) do
+                if tostring(e.Id) == cleanId then
+                    WindUI:Notify({ Title = "Emote Manager", Content = (currentLang == "TH" and "มี ID นี้ในรายการแล้ว!" or "ID already exists in your list!"), Icon = "alert-circle" })
+                    return
+                end
+            end
+        end
+
+        WindUI:Notify({ Title = "Emote Manager", Content = (currentLang == "TH" and "กำลังวิเคราะห์ Asset / Bundle ID..." or "Resolving Asset / Bundle ID..."), Icon = "loader" })
+
+        task.spawn(function()
+            local isPack, packMap, resolvedName = inspectAndResolveAsset(inputEmoteId)
+            
+            if not resolvedName then
+                pcall(function()
+                    local info = MarketplaceService:GetProductInfo(tonumber(cleanId))
+                    if info and info.Name then
+                        resolvedName = info.Name
+                    end
+                end)
+            end
+
+            local finalName = resolvedName or ((isPack and "Custom Pack " or "Custom Emote ") .. cleanId)
+            local newEntry = { Name = finalName, Id = cleanId, IsPack = isPack, PackMap = packMap }
+            table.insert(customEmotes, newEntry)
+            saveCustomEmotesToDisk()
+
+            renderCustomItemButton(newEntry, #customEmotes)
+            reorderAllCustomItemButtons()
+            refreshDeleteEmoteDropdown()
+
+            local msgType = isPack and (currentLang == "TH" and "ชุด Animation Pack (อยู่ใต้ Adidas Aura Pack)" or "Animation Pack (under Adidas Aura Pack)") or (currentLang == "TH" and "ท่าเต้น Emote" or "Emote")
+            WindUI:Notify({ Title = "Emote Manager", Content = (currentLang == "TH" and ("เพิ่ม " .. msgType .. " '" .. finalName .. "' สำเร็จ!") or ("Added " .. msgType .. " '" .. finalName .. "'!")), Icon = "check-circle" })
+        end)
+    end,
+})
+
+UI.DeleteEmoteDropdown = TabSettings:Dropdown({
+    Title = TRANSLATIONS[currentLang].Settings.SelectDelete,
+    Values = getCustomEmoteNames(),
+    Callback = function(selected)
+        selectedDeleteEmoteName = selected
+    end,
+})
+
+UI.btnDeleteEmote = TabSettings:Button({
+    Title = TRANSLATIONS[currentLang].Settings.DeleteEmote,
+    Desc = TRANSLATIONS[currentLang].Settings.DeleteEmoteDesc,
+    Icon = "solar:trash-bin-trash-bold",
+    Callback = function()
+        if not selectedDeleteEmoteName or selectedDeleteEmoteName == "None" or selectedDeleteEmoteName == "ไม่มี" then
+            WindUI:Notify({ Title = "Emote Manager", Content = (currentLang == "TH" and "กรุณาเลือกรายการที่ต้องการลบก่อน!" or "Please select an item to delete!"), Icon = "alert-circle" })
+            return
+        end
+
+        local foundIndex = nil
+        local targetId = nil
+        if type(customEmotes) == "table" then
+            for i, e in ipairs(customEmotes) do
+                if e.Name == selectedDeleteEmoteName then
+                    foundIndex = i
+                    targetId = tostring(e.Id)
+                    break
+                end
+            end
+        end
+
+        if not foundIndex then
+            WindUI:Notify({ Title = "Emote Manager", Content = (currentLang == "TH" and "ไม่พบรายการที่เลือก!" or "Selected item not found!"), Icon = "alert-circle" })
+            return
+        end
+
+        if targetId and customEmoteButtons[targetId] then
+            pcall(function()
+                local b = customEmoteButtons[targetId]
+                if b.ButtonFrame then b.ButtonFrame:Destroy() end
+                if b.UIElements and b.UIElements.Main then b.UIElements.Main:Destroy() end
+            end)
+            customEmoteButtons[targetId] = nil
+        end
+
+        table.remove(customEmotes, foundIndex)
+        saveCustomEmotesToDisk()
+        reorderAllCustomItemButtons()
+        refreshDeleteEmoteDropdown()
+
+        WindUI:Notify({ Title = "Emote Manager", Content = (currentLang == "TH" and ("ลบ '" .. selectedDeleteEmoteName .. "' สำเร็จ!") or ("Deleted '" .. selectedDeleteEmoteName .. "' successfully!")), Icon = "trash-2" })
+    end,
+})
+
+UI.secUITheme = TabSettings:Section({ Title = TRANSLATIONS[currentLang].Settings.SecTheme })
+
+-- SLIDER: ปรับความโปร่งใสของ Background UI (เริ่มต้น 10%)
+UI.sliderTrans = TabSettings:Slider({
+    Title = TRANSLATIONS[currentLang].Settings.UITransparency,
+    Desc = TRANSLATIONS[currentLang].Settings.UITransparencyDesc,
+    Value = {
+        Min = 0,
+        Max = 90,
+        Default = 10,
+    },
+    Callback = function(val)
+        setCleanWindowTransparency(val)
+    end,
+})
+
+UI.themeDropdown = TabSettings:Dropdown({
+    Title = TRANSLATIONS[currentLang].Settings.SelectTheme,
     Values = {"Dark", "Light", "Rose", "Indigo", "Violet", "Emerald", "Midnight"},
     Value = "Dark",
     Callback = function(themeName)
@@ -1647,17 +3308,185 @@ TabSettings:Dropdown({
     end,
 })
 
-TabSettings:Button({
-    Title = "Unload / Close Script",
-    Desc = "Completely closes UI and cleans up all scripts",
+UI.btnUnload = TabSettings:Button({
+    Title = TRANSLATIONS[currentLang].Settings.Unload,
+    Desc = TRANSLATIONS[currentLang].Settings.UnloadDesc,
     Callback = fullUnloadScript,
 })
 
 --==================================================
--- BACKGROUND LOOPS (Live Role Badge, Chroma, Speed, Fly, Noclip)
+-- LIVE LANGUAGE SWITCHING ENGINE (ONLY CONTENT TRANSLATES)
 --==================================================
+local function updateAllTextsToLanguage(lang)
+    currentLang = lang
+    local T = TRANSLATIONS[lang] or TRANSLATIONS.EN
 
--- Live Role Badge Updater Loop (Neon Vibrant Colors)
+    -- 1. อัปเดตแท็บด้านซ้ายตามภาษาที่เลือก (EN / TH)
+    updateSidebarTabs(lang)
+
+    -- 2. อัปเดต Tab 1: Main
+    updateElementText(UI.secMainInfo, T.Main.SecInfo)
+    updateElementText(UI.paraMain, T.Main.WelcomeTitle, T.Main.WelcomeDesc)
+    updateElementText(UI.secDiscord, T.Main.SecDiscord)
+    updateElementText(UI.paraDiscord, T.Main.DiscordTitle, T.Main.DiscordDesc)
+    updateElementText(UI.btnCopyDiscord, T.Main.CopyDiscord, T.Main.CopyDiscordDesc)
+    updateElementText(UI.btnReload, T.Main.Reload, T.Main.ReloadDesc)
+    updateElementText(UI.btnRejoin, T.Main.Rejoin, T.Main.RejoinDesc)
+    updateElementText(UI.btnServerHop, T.Main.ServerHop, T.Main.ServerHopDesc)
+
+    -- 3. อัปเดต Tab 2: ESP
+    updateElementText(UI.secESPVisuals, T.ESP.SecVisuals)
+    updateElementText(UI.togESP, T.ESP.PlayerGunESP, T.ESP.PlayerGunDesc)
+
+    -- 4. อัปเดต Tab 3: Combat
+    updateElementText(UI.secSheriff, T.Combat.SecSheriff)
+    updateElementText(UI.btnTPShoot, T.Combat.TPShoot, T.Combat.TPShootDesc)
+    updateElementText(UI.btnAimShoot, T.Combat.AimShoot, T.Combat.AimShootDesc)
+    updateElementText(UI.secMurderer, T.Combat.SecMurderer)
+    updateElementText(UI.btnKnifeThrow, T.Combat.KnifeThrow, T.Combat.KnifeThrowDesc)
+    updateElementText(UI.btnKillAll, T.Combat.KillAll, T.Combat.KillAllDesc)
+    updateElementText(UI.secFling, T.Combat.SecFling)
+    updateElementText(UI.btnFlingMurd, T.Combat.FlingMurd)
+    updateElementText(UI.btnFlingSher, T.Combat.FlingSher)
+    updateElementText(UI.secGunDrop, T.Combat.SecGun)
+    updateElementText(UI.btnTPGun, T.Combat.TPGun)
+    updateElementText(UI.btnGetGun, T.Combat.GetGun)
+    updateElementText(UI.togAutoGun, T.Combat.AutoGun, T.Combat.AutoGunDesc)
+    updateElementText(UI.secQuickSkills, T.Combat.SecQuickSkills)
+    updateElementText(UI.togQuickSkills, T.Combat.TogQuickSkills, T.Combat.TogQuickSkillsDesc)
+    updateQuickSkillButtons()
+
+    -- 5. อัปเดต Tab 4: Player
+    updateElementText(UI.secDef, T.Player.SecDef)
+    updateElementText(UI.togAF, T.Player.AntiFling, T.Player.AntiFlingDesc)
+    updateElementText(UI.togNC, T.Player.Noclip, T.Player.NoclipDesc)
+    updateElementText(UI.togFly, T.Player.Fly, T.Player.FlyDesc)
+    updateElementText(UI.togSpeed, T.Player.Speed, T.Player.SpeedDesc)
+    updateElementText(UI.secDK, T.Player.SecDK)
+    updateElementText(UI.btnDK, T.Player.Dropkick, T.Player.DropkickDesc)
+    updateElementText(UI.secPack, T.Player.SecPack)
+    updateElementText(UI.btnAuraPack, T.Player.AuraPack, T.Player.AuraPackDesc)
+    updateElementText(UI.secEmote, T.Player.SecEmote)
+    updateElementText(UI.bDefault, T.Player.DefaultDance)
+    updateElementText(UI.bFloat, T.Player.FloatingInLove)
+    updateElementText(UI.bJamal, T.Player.JamalGroove)
+    updateElementText(UI.bPump, T.Player.PumpkinKing)
+    updateElementText(UI.bSlow, T.Player.SlowAuraRun)
+    updateElementText(UI.bPoop, T.Player.PoopingSniff)
+
+    -- 6. อัปเดต Tab 5: Teleports
+    updateElementText(UI.secLoc, T.Teleports.SecLoc)
+    updateElementText(UI.btnTPLobby, T.Teleports.TPLobby)
+    updateElementText(UI.btnTPMap, T.Teleports.TPMap)
+    updateElementText(UI.secTargetTP, T.Teleports.SecTarget)
+    updateElementText(UI.TargetDropdown, T.Teleports.SelectTarget)
+    updateElementText(UI.btnTPTarget, T.Teleports.TPTarget)
+    updateElementText(UI.btnFlingTarget, T.Teleports.FlingTarget)
+    updateElementText(UI.togViewTarget, T.Teleports.ViewTarget, T.Teleports.ViewTargetDesc)
+    updateElementText(UI.btnRefreshTarget, T.Teleports.RefreshTarget)
+
+    -- 7. อัปเดต Tab 6: Settings
+    updateElementText(UI.secEmoteMgr, T.Settings.SecEmotesMgr)
+    updateElementText(UI.inpIdObj, T.Settings.EmoteId)
+    updateElementText(UI.btnAddEmote, T.Settings.AddEmote, T.Settings.AddEmoteDesc)
+    updateElementText(UI.DeleteEmoteDropdown, T.Settings.SelectDelete)
+    updateElementText(UI.btnDeleteEmote, T.Settings.DeleteEmote, T.Settings.DeleteEmoteDesc)
+    updateElementText(UI.secUITheme, T.Settings.SecTheme)
+    updateElementText(UI.sliderTrans, T.Settings.UITransparency, T.Settings.UITransparencyDesc)
+    updateElementText(UI.themeDropdown, T.Settings.SelectTheme)
+    updateElementText(UI.btnUnload, T.Settings.Unload, T.Settings.UnloadDesc)
+
+    -- รีเฟรช ESP & Role Tag
+    refreshAllESP()
+    local myRole = getRole(LocalPlayer)
+    local tagText = T.RoleTags[myRole] or myRole
+    pcall(function() RoleTag:SetTitle(tagText) end)
+end
+
+--==================================================
+-- TOPBAR LANGUAGE TOGGLE BUTTON (SLEEK DARK MATTE & METALLIC BORDER)
+--==================================================
+pcall(function()
+    local topbarRight = Window.UIElements.Main.Main.Topbar.Right
+    if topbarRight then
+        local langBtn = Instance.new("ImageButton")
+        langBtn.Name = "R1N_LangToggleBtn"
+        langBtn.Size = UDim2.fromOffset(28, 28)
+        langBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+        langBtn.BackgroundTransparency = 0.2
+        langBtn.AutoButtonColor = false
+        langBtn.LayoutOrder = 994
+        langBtn.Active = true
+        langBtn.Selectable = true
+        langBtn.AutoLocalize = false
+        langBtn.Parent = topbarRight
+
+        Instance.new("UICorner", langBtn).CornerRadius = UDim.new(0, 8)
+        local btnStroke = Instance.new("UIStroke", langBtn)
+        btnStroke.Color = Color3.fromRGB(55, 55, 70)
+        btnStroke.Transparency = 0.3
+        btnStroke.Thickness = 1.0
+
+        local flagLabel = Instance.new("TextLabel", langBtn)
+        flagLabel.Name = "FlagLabel"
+        flagLabel.Size = UDim2.new(1, 0, 1, 0)
+        flagLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+        flagLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+        flagLabel.BackgroundTransparency = 1
+        flagLabel.Text = TRANSLATIONS[currentLang].Flag
+        flagLabel.TextSize = 14
+        flagLabel.Font = Enum.Font.GothamMedium
+        flagLabel.AutoLocalize = false
+        flagLabel.TextXAlignment = Enum.TextXAlignment.Center
+        flagLabel.TextYAlignment = Enum.TextYAlignment.Center
+
+        local flagScale = Instance.new("UIScale", flagLabel)
+        flagScale.Scale = 1
+
+        langBtn.MouseEnter:Connect(function()
+            TweenService:Create(langBtn, TweenInfo.new(0.15), {
+                BackgroundColor3 = Color3.fromRGB(38, 38, 50),
+                BackgroundTransparency = 0
+            }):Play()
+            TweenService:Create(btnStroke, TweenInfo.new(0.15), {
+                Color = Color3.fromRGB(80, 80, 100),
+                Transparency = 0
+            }):Play()
+        end)
+
+        langBtn.MouseLeave:Connect(function()
+            TweenService:Create(langBtn, TweenInfo.new(0.15), {
+                BackgroundColor3 = Color3.fromRGB(28, 28, 36),
+                BackgroundTransparency = 0.2
+            }):Play()
+            TweenService:Create(btnStroke, TweenInfo.new(0.15), {
+                Color = Color3.fromRGB(55, 55, 70),
+                Transparency = 0.3
+            }):Play()
+        end)
+
+        langBtn.MouseButton1Click:Connect(function()
+            flagScale.Scale = 0.75
+            TweenService:Create(flagScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Scale = 1
+            }):Play()
+
+            local nextLang = (currentLang == "EN" and "TH" or "EN")
+            flagLabel.Text = TRANSLATIONS[nextLang].Flag
+            updateAllTextsToLanguage(nextLang)
+
+            WindUI:Notify({
+                Title = (nextLang == "TH" and "ภาษา (Language)" or "Language"),
+                Content = TRANSLATIONS[nextLang].SwitchedNotify,
+                Icon = "globe"
+            })
+        end)
+    end
+end)
+
+--==================================================
+-- BACKGROUND LOOPS (Live Role Badge, Speed, Fly, Noclip)
+--==================================================
 task.spawn(function()
     local lastRole = nil
     while not Destroyed do
@@ -1666,47 +3495,13 @@ task.spawn(function()
         if myRole ~= lastRole then
             lastRole = myRole
             local tagColor = COLORS[myRole] or Color3.fromRGB(150, 150, 165)
-            local tagIcon = "solar:user-bold"
-
-            if myRole == "Murderer" then
-                tagIcon = "solar:danger-bold"
-            elseif myRole == "Sheriff" then
-                tagIcon = "solar:shield-check-bold"
-            elseif myRole == "Hero" then
-                tagIcon = "solar:star-bold"
-            elseif myRole == "Dead" then
-                tagIcon = "solar:skull-bold"
-            end
+            local tagText = TRANSLATIONS[currentLang].RoleTags[myRole] or myRole
 
             pcall(function()
-                RoleTag:SetTitle(myRole)
+                RoleTag:SetTitle(tagText)
                 RoleTag:SetColor(tagColor)
-                RoleTag:SetIcon(tagIcon)
             end)
-        end
-    end
-end)
-
-task.spawn(function()
-    local hue = 0
-    while not Destroyed do
-        task.wait(0.1)
-        if ChromaEnabled then
-            hue = hue + 0.05
-            if hue > 1 then hue = 0 end
-            local c = Color3.fromHSV(hue, 1, 1)
-            local char = LocalPlayer.Character
-            if char then
-                for _, w in ipairs({"Knife", "Gun"}) do
-                    local t = char:FindFirstChild(w)
-                    if t and t:FindFirstChild("Handle") then
-                        t.Handle.Material = Enum.Material.Neon
-                        t.Handle.Color = c
-                        local m = t.Handle:FindFirstChildOfClass("SpecialMesh")
-                        if m then m.VertexColor = Vector3.new(c.R, c.G, c.B) end
-                    end
-                end
-            end
+            updateQuickSkillButtons(myRole)
         end
     end
 end)
@@ -1758,4 +3553,22 @@ task.spawn(function()
             end
         end
     end
+end)
+
+--==================================================
+-- STRICT 100% FINISH & REVEAL MAIN UI (DEFAULT 10% TRANSPARENCY)
+--==================================================
+finishAndShowUI(function()
+    pcall(function()
+        if Window.UIElements and Window.UIElements.Main then
+            Window.UIElements.Main.Visible = true
+            if Restore and Restore.Btn then Restore.Btn.Visible = false end
+            if Window.TabModule and Window.TabModule.SelectedTab then
+                Window.TabModule:SelectTab(Window.TabModule.SelectedTab)
+            end
+            updateSidebarTabs(currentLang)
+            disableRobloxAutoLocalize(Window.UIElements.Main)
+            setCleanWindowTransparency(10)
+        end
+    end)
 end)
