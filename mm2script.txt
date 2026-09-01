@@ -2473,56 +2473,75 @@ pcall(function()
 end)
 
 --==================================================
--- ULTRA-RESPONSIVE MOBILE & PC DRAG ENGINE FOR MAIN WINDOW
+-- SEAMLESS INVISIBLE FULL-TOPBAR DRAG ENGINE FOR MAIN WINDOW (MOBILE & PC)
 --==================================================
 pcall(function()
     local mainFrame = Window.UIElements and Window.UIElements.Main
     local topbar = mainFrame and mainFrame:FindFirstChild("Main") and mainFrame.Main:FindFirstChild("Topbar")
-    if mainFrame and topbar then
-        -- Transparent touch overlay covering the draggable area of Topbar (clears right 135px for buttons)
-        local dragOverlay = Instance.new("TextButton")
-        dragOverlay.Name = "R1N_MobileDragOverlay"
-        dragOverlay.Size = UDim2.new(1, -135, 1, 0)
-        dragOverlay.Position = UDim2.new(0, 0, 0, 0)
-        dragOverlay.BackgroundTransparency = 1
-        dragOverlay.Text = ""
-        dragOverlay.AutoButtonColor = false
-        dragOverlay.Active = true
-        dragOverlay.Selectable = false
-        dragOverlay.ZIndex = 50
-        dragOverlay.AutoLocalize = false
-        dragOverlay.Parent = topbar
+    if not mainFrame or not topbar then return end
 
-        local isDraggingMain = false
-        local dragStartMain = nil
-        local startPosMain = nil
-
-        dragOverlay.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                isDraggingMain = true
-                dragStartMain = input.Position
-                startPosMain = mainFrame.Position
+    -- Make Title, Subtitle, Icon, and Tags click-through so touches pass seamlessly into the drag layer!
+    local topbarLeft = topbar:FindFirstChild("Left")
+    if topbarLeft then
+        topbarLeft.Active = false
+        for _, child in ipairs(topbarLeft:GetDescendants()) do
+            if child:IsA("GuiObject") then
+                child.Active = false
             end
-        end)
-
-        UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                isDraggingMain = false
-            end
-        end)
-
-        UserInputService.InputChanged:Connect(function(input)
-            if isDraggingMain and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                local delta = input.Position - dragStartMain
-                mainFrame.Position = UDim2.new(
-                    startPosMain.X.Scale,
-                    startPosMain.X.Offset + delta.X,
-                    startPosMain.Y.Scale,
-                    startPosMain.Y.Offset + delta.Y
-                )
-            end
-        end)
+        end
     end
+
+    -- Full-width invisible touch-drag button across the entire top bar (stops 150px before right buttons)
+    local dragOverlay = Instance.new("TextButton")
+    dragOverlay.Name = "R1N_SeamlessDragOverlay"
+    dragOverlay.Size = UDim2.new(1, -150, 1, 0)
+    dragOverlay.Position = UDim2.new(0, 0, 0, 0)
+    dragOverlay.BackgroundTransparency = 1
+    dragOverlay.Text = ""
+    dragOverlay.AutoButtonColor = false
+    dragOverlay.Active = true
+    dragOverlay.Selectable = false
+    dragOverlay.ZIndex = 85
+    dragOverlay.AutoLocalize = false
+    dragOverlay.Parent = topbar
+
+    local isDraggingMain = false
+    local dragStartMain = nil
+    local startPosMain = nil
+
+    local function onDragStart(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDraggingMain = true
+            dragStartMain = input.Position
+            startPosMain = mainFrame.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End or input.UserInputState == Enum.UserInputState.Cancel then
+                    isDraggingMain = false
+                end
+            end)
+        end
+    end
+
+    dragOverlay.InputBegan:Connect(onDragStart)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDraggingMain = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if isDraggingMain and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStartMain
+            mainFrame.Position = UDim2.new(
+                startPosMain.X.Scale,
+                startPosMain.X.Offset + delta.X,
+                startPosMain.Y.Scale,
+                startPosMain.Y.Offset + delta.Y
+            )
+        end
+    end)
 end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
