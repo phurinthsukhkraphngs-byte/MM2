@@ -2472,6 +2472,59 @@ pcall(function()
     end
 end)
 
+--==================================================
+-- ULTRA-RESPONSIVE MOBILE & PC DRAG ENGINE FOR MAIN WINDOW
+--==================================================
+pcall(function()
+    local mainFrame = Window.UIElements and Window.UIElements.Main
+    local topbar = mainFrame and mainFrame:FindFirstChild("Main") and mainFrame.Main:FindFirstChild("Topbar")
+    if mainFrame and topbar then
+        -- Transparent touch overlay covering the draggable area of Topbar (clears right 135px for buttons)
+        local dragOverlay = Instance.new("TextButton")
+        dragOverlay.Name = "R1N_MobileDragOverlay"
+        dragOverlay.Size = UDim2.new(1, -135, 1, 0)
+        dragOverlay.Position = UDim2.new(0, 0, 0, 0)
+        dragOverlay.BackgroundTransparency = 1
+        dragOverlay.Text = ""
+        dragOverlay.AutoButtonColor = false
+        dragOverlay.Active = true
+        dragOverlay.Selectable = false
+        dragOverlay.ZIndex = 50
+        dragOverlay.AutoLocalize = false
+        dragOverlay.Parent = topbar
+
+        local isDraggingMain = false
+        local dragStartMain = nil
+        local startPosMain = nil
+
+        dragOverlay.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                isDraggingMain = true
+                dragStartMain = input.Position
+                startPosMain = mainFrame.Position
+            end
+        end)
+
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                isDraggingMain = false
+            end
+        end)
+
+        UserInputService.InputChanged:Connect(function(input)
+            if isDraggingMain and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - dragStartMain
+                mainFrame.Position = UDim2.new(
+                    startPosMain.X.Scale,
+                    startPosMain.X.Offset + delta.X,
+                    startPosMain.Y.Scale,
+                    startPosMain.Y.Offset + delta.Y
+                )
+            end
+        end)
+    end
+end)
+
 UserInputService.InputBegan:Connect(function(input, processed)
     if not processed and input.KeyCode == Enum.KeyCode.RightShift then
         if Window.UIElements and Window.UIElements.Main then
@@ -2509,18 +2562,49 @@ QuickSkills.Container.Active = true
 QuickSkills.Container.Visible = false
 QuickSkills.Container.Parent = QuickSkills.Gui
 
+-- Mobile Drag Grip Handle (Dedicated easy-to-touch grab bar)
+local DragGrip = Instance.new("ImageButton")
+DragGrip.Name = "DragGrip"
+DragGrip.Size = UDim2.new(1, -8, 0, 16)
+DragGrip.Position = UDim2.new(0.5, 0, 0, -20)
+DragGrip.AnchorPoint = Vector2.new(0.5, 0)
+DragGrip.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
+DragGrip.BackgroundTransparency = 0.2
+DragGrip.AutoButtonColor = false
+DragGrip.Active = true
+DragGrip.Selectable = false
+DragGrip.AutoLocalize = false
+DragGrip.Parent = QuickSkills.Container
+
+Instance.new("UICorner", DragGrip).CornerRadius = UDim.new(1, 0)
+local GripStroke = Instance.new("UIStroke", DragGrip)
+GripStroke.Color = Color3.fromRGB(80, 80, 100)
+GripStroke.Thickness = 1
+
+local GripDots = Instance.new("TextLabel", DragGrip)
+GripDots.Size = UDim2.new(1, 0, 1, 0)
+GripDots.BackgroundTransparency = 1
+GripDots.Text = "••••"
+GripDots.TextColor3 = Color3.fromRGB(190, 190, 210)
+GripDots.TextSize = 11
+GripDots.Font = Enum.Font.GothamBold
+GripDots.AutoLocalize = false
+
 -- Smooth Draggable Container (Touch & Mouse Support)
 QuickSkills.isDragging = false
 QuickSkills.dragStart = nil
 QuickSkills.startPos = nil
 
-QuickSkills.Container.InputBegan:Connect(function(input)
+local function onQuickDragBegan(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         QuickSkills.isDragging = true
         QuickSkills.dragStart = input.Position
         QuickSkills.startPos = QuickSkills.Container.Position
     end
-end)
+end
+
+QuickSkills.Container.InputBegan:Connect(onQuickDragBegan)
+DragGrip.InputBegan:Connect(onQuickDragBegan)
 
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
